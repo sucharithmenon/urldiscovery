@@ -1,7 +1,9 @@
 """Configuration settings for URL Discovery Engine."""
 
+from __future__ import annotations
+
 from pydantic_settings import BaseSettings
-from typing import Literal
+from typing import Literal, Optional
 
 
 class Settings(BaseSettings):
@@ -24,7 +26,7 @@ class Settings(BaseSettings):
     unresolved_file: str = "unresolved.csv"
 
     # Optional API keys (for future SERP integration)
-    scrape_do_api_token: str | None = None
+    scrape_do_api_token: Optional[str] = None
 
     class Config:
         env_file = ".env"

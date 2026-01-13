@@ -1,7 +1,9 @@
 """Data models for URL Discovery Engine."""
 
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -17,18 +19,18 @@ class CompanyRecord(BaseModel):
     company_name_clean: str = Field(
         description="Human-readable company name"
     )
-    company_domain: str | None = Field(
+    company_domain: Optional[str] = Field(
         default=None,
         description="Root domain without protocol/www (e.g., 'algolia.com')"
     )
-    corporate_url: str | None = Field(
+    corporate_url: Optional[str] = Field(
         default=None,
         description="Company careers page URL"
     )
     ats_status: int = Field(
         description="HTTP status code of ATS URL"
     )
-    corporate_status: int | None = Field(
+    corporate_status: Optional[int] = Field(
         default=None,
         description="HTTP status code of corporate URL"
     )
@@ -65,7 +67,7 @@ class UnresolvedRecord(BaseModel):
     input_url: str = Field(
         description="The original input URL"
     )
-    ats_name: str | None = Field(
+    ats_name: Optional[str] = Field(
         default=None,
         description="Detected ATS platform (if any)"
     )
@@ -105,7 +107,7 @@ class ValidationResult(BaseModel):
         default=False,
         description="Whether redirected to SSO/login"
     )
-    error: str | None = Field(
+    error: Optional[str] = Field(
         default=None,
         description="Error message if request failed"
     )
