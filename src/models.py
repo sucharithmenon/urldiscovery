@@ -53,11 +53,6 @@ class CompanyRecord(BaseModel):
             "company_name_clean": self.company_name_clean,
             "company_domain": self.company_domain or "",
             "corporate_url": self.corporate_url or "",
-            "ats_status": self.ats_status,
-            "corporate_status": self.corporate_status or "",
-            "discovery_method": self.discovery_method,
-            "confidence": self.confidence,
-            "verified_at": self.verified_at.isoformat(),
         }
 
 
@@ -133,11 +128,6 @@ CSV_FIELDS = [
     "company_name_clean",
     "company_domain",
     "corporate_url",
-    "ats_status",
-    "corporate_status",
-    "discovery_method",
-    "confidence",
-    "verified_at",
 ]
 
 UNRESOLVED_CSV_FIELDS = [

@@ -50,6 +50,16 @@ def _is_valid_validation(status_code: int, is_soft_404: bool, is_sso_redirect: b
     return True
 
 
+def _is_corporate_valid(status_code: int, is_sso_redirect: bool) -> bool:
+    if status_code <= 0:
+        return False
+    if status_code >= 400:
+        return False
+    if is_sso_redirect:
+        return False
+    return True
+
+
 def _domain_for(url: str) -> str:
     try:
         parsed = urlparse(url)
@@ -150,9 +160,8 @@ class ReverseResolver:
 
     async def resolve(self, input_url: str) -> CompanyRecord | UnresolvedRecord:
         corp_validation = await self.client.validate(input_url)
-        if not _is_valid_validation(
+        if not _is_corporate_valid(
             corp_validation.status_code,
-            corp_validation.is_soft_404,
             corp_validation.is_sso_redirect,
         ):
             return UnresolvedRecord(
@@ -180,9 +189,8 @@ class ReverseResolver:
         if not careers_url:
             for candidate in _iter_common_careers_paths(homepage_url):
                 validation = await self.client.validate(candidate)
-                if _is_valid_validation(
+                if _is_corporate_valid(
                     validation.status_code,
-                    validation.is_soft_404,
                     validation.is_sso_redirect,
                 ):
                     careers_url = validation.final_url
@@ -196,9 +204,8 @@ class ReverseResolver:
             )
 
         careers_validation = await self.client.validate(careers_url)
-        if not _is_valid_validation(
+        if not _is_corporate_valid(
             careers_validation.status_code,
-            careers_validation.is_soft_404,
             careers_validation.is_sso_redirect,
         ):
             return UnresolvedRecord(
@@ -257,25 +264,16 @@ class ReverseResolver:
                 reason=f"ATS URL invalid: {ats_validation.status_code}",
             )
 
-        company_name = extract_company_name(html, slug=slug, mode=self.mode)
-        if self.mode == "strict" and not company_name:
-            return UnresolvedRecord(
-                input_url=corporate_url,
-                ats_name=ats_name,
-                reason="Company name not found",
-            )
+        company_name = extract_company_name(html, slug=slug, mode="strict")
+        domain = extract_domain(corporate_url) if corporate_url else None
 
-        domain = extract_domain(corporate_url)
-        if self.mode == "strict" and not domain:
-            return UnresolvedRecord(
-                input_url=corporate_url,
-                ats_name=ats_name,
-                reason="Company domain not found",
-            )
+        corporate_url_out = None
+        if corporate_url and (has_careers_indicator(corporate_url) or is_careers_page(html)):
+            corporate_url_out = corporate_url
 
         confidence = "verified"
         if self.mode != "strict":
-            if not has_careers_indicator(corporate_url) and not is_careers_page(html):
+            if corporate_url_out is None:
                 confidence = "inferred"
 
         return CompanyRecord(
@@ -283,7 +281,7 @@ class ReverseResolver:
             company_ats_url=ats_validation.final_url,
             company_name_clean=company_name or "",
             company_domain=domain,
-            corporate_url=corporate_url,
+            corporate_url=corporate_url_out,
             ats_status=ats_validation.status_code,
             corporate_status=200,
             discovery_method="reverse",

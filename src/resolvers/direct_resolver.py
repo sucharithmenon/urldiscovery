@@ -54,18 +54,9 @@ class DirectResolver:
         html, ats_final_url, _ = await self.client.fetch_html(ats_validation.final_url)
 
         corp_result = extract_corporate_url(html, ats_final_url)
-        if not corp_result or corp_result.confidence != "verified":
-            if self.mode == "strict":
-                reason = "No corporate careers URL found"
-                if corp_result:
-                    reason = "Corporate URL not verified as careers page"
-                return UnresolvedRecord(
-                    input_url=input_url,
-                    ats_name=ats_name,
-                    reason=reason,
-                )
-
-        corp_url = corp_result.value if corp_result else None
+        corp_url = None
+        if corp_result and corp_result.confidence == "verified":
+            corp_url = corp_result.value
         corp_status = None
         corp_final_url = None
         corp_ok = False
@@ -78,28 +69,13 @@ class DirectResolver:
                 corp_validation.is_soft_404,
                 corp_validation.is_sso_redirect,
             )
-            if self.mode == "strict" and not corp_ok:
-                return UnresolvedRecord(
-                    input_url=input_url,
-                    ats_name=ats_name,
-                    reason=f"Corporate URL invalid: {corp_validation.status_code}",
-                )
+            if not corp_ok:
+                corp_final_url = None
+                corp_url = None
+                corp_status = None
 
-        company_name = extract_company_name(html, slug=slug, mode=self.mode)
-        if self.mode == "strict" and not company_name:
-            return UnresolvedRecord(
-                input_url=input_url,
-                ats_name=ats_name,
-                reason="Company name not found",
-            )
-
+        company_name = extract_company_name(html, slug=slug, mode="strict")
         domain = extract_domain(corp_final_url or corp_url) if corp_url else None
-        if self.mode == "strict" and not domain:
-            return UnresolvedRecord(
-                input_url=input_url,
-                ats_name=ats_name,
-                reason="Company domain not found",
-            )
 
         confidence = "verified"
         if self.mode != "strict":
