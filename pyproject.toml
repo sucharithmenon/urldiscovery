@@ -1,0 +1,38 @@
+[project]
+name = "url-discovery-engine"
+version = "0.1.0"
+description = "Production-ready ATS to Corporate URL resolver"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "tldextract>=5.1.0",
+    "typer>=0.12.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "aiolimiter>=1.1.0",
+    "tenacity>=8.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "respx>=0.21.0",
+]
+
+[project.scripts]
+url-discovery = "src.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
