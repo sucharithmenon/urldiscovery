@@ -10,7 +10,7 @@ from typing import Iterable
 import typer
 
 from .models import CompanyRecord, UnresolvedRecord
-from .output.csv_writer import append_company_record
+from .output.csv_writer import append_company_record, dedupe_company_file
 from .output.unresolved_writer import append_unresolved_record
 from .patterns.ats_patterns import detect, is_job_url
 from .validators.http_validator import HTTPClient
@@ -52,6 +52,7 @@ async def _process_urls(
     mode: str,
     method: str,
     concurrency: int,
+    dedupe: bool,
 ) -> None:
     client = HTTPClient()
     direct = DirectResolver(client=client, mode=mode)
@@ -81,6 +82,8 @@ async def _process_urls(
             append_unresolved_record(unresolved_path, result)
 
     await client.close()
+    if dedupe:
+        dedupe_company_file(output_path)
 
 
 @app.command()
@@ -90,10 +93,11 @@ def resolve(
     method: str = "auto",
     output: str = "output/output.csv",
     unresolved: str = "output/unresolved.csv",
+    dedupe: bool = True,
 ):
     """Resolve a single URL."""
     async def _run():
-        await _process_urls([url], output, unresolved, mode, method, concurrency=1)
+        await _process_urls([url], output, unresolved, mode, method, concurrency=1, dedupe=dedupe)
     asyncio.run(_run())
 
 
@@ -105,11 +109,12 @@ def batch(
     mode: str = "strict",
     method: str = "auto",
     concurrency: int = 20,
+    dedupe: bool = True,
 ):
     """Process a batch of URLs from CSV."""
     urls = _load_urls(input_file)
     async def _run():
-        await _process_urls(urls, output, unresolved, mode, method, concurrency)
+        await _process_urls(urls, output, unresolved, mode, method, concurrency, dedupe)
     asyncio.run(_run())
 
 
