@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Iterable
 from urllib.parse import urljoin, urlparse
 
@@ -32,6 +33,41 @@ COMMON_CAREERS_PATHS = [
     "/join",
     "/opportunities",
 ]
+
+JOB_LINK_PATTERNS = [
+    re.compile(r"/(job|jobs|position|positions|opening|openings|opportunit(?:y|ies)|requisition|req)/", re.IGNORECASE),
+    re.compile(r"[?&](job|jobid|req|reqid|requisition)=", re.IGNORECASE),
+]
+
+JOB_LINK_TEXT = (
+    "job",
+    "jobs",
+    "position",
+    "positions",
+    "opening",
+    "openings",
+    "opportunity",
+    "opportunities",
+    "apply",
+)
+
+JOB_URL_ATTRS = (
+    "data-job-url",
+    "data-apply-url",
+    "data-applyurl",
+    "data-job-link",
+    "data-url",
+    "data-href",
+)
+
+STRONG_JOB_ATTRS = {
+    "data-job-url",
+    "data-apply-url",
+    "data-applyurl",
+    "data-job-link",
+}
+
+MAX_JOB_DETAIL_PAGES = 5
 
 
 _TLD_EXTRACT = tldextract.TLDExtract(
@@ -153,6 +189,64 @@ def _iter_common_careers_paths(base_url: str) -> Iterable[str]:
     return [f"{base}{path}" for path in COMMON_CAREERS_PATHS]
 
 
+def _looks_like_job_link(href: str, text: str) -> bool:
+    if not href:
+        return False
+    for pattern in JOB_LINK_PATTERNS:
+        if pattern.search(href):
+            return True
+    if text:
+        text_lower = text.lower()
+        for keyword in JOB_LINK_TEXT:
+            if keyword in text_lower:
+                return True
+    return False
+
+
+def _find_job_detail_links(html: str, base_url: str) -> list[str]:
+    soup = BeautifulSoup(html, "html.parser")
+    base_domain = _domain_for(base_url)
+    base_clean = base_url.rstrip("/")
+    seen: set[str] = set()
+    candidates: list[str] = []
+
+    def add_candidate(raw_url: str, *, strong: bool = False, text: str = "") -> None:
+        raw = (raw_url or "").strip()
+        if not raw:
+            return
+        full = urljoin(base_url, raw)
+        if not full or full in seen:
+            return
+        if full.rstrip("/") == base_clean:
+            return
+        detected = detect(full)
+        if not detected and not _is_internal(full, base_domain) and not strong:
+            return
+        if not strong and not detected and not _looks_like_job_link(full, text):
+            return
+        seen.add(full)
+        candidates.append(full)
+
+    for link in soup.find_all("a", href=True):
+        href = link.get("href", "").strip()
+        if not href or href.startswith("#"):
+            continue
+        lowered = href.lower()
+        if lowered.startswith(("javascript:", "mailto:", "tel:")):
+            continue
+        text = link.get_text(" ", strip=True)
+        if _looks_like_job_link(href, text):
+            add_candidate(href, text=text)
+
+    for attr in JOB_URL_ATTRS:
+        for tag in soup.find_all(attrs={attr: True}):
+            raw = tag.get(attr, "")
+            text = tag.get_text(" ", strip=True)
+            add_candidate(raw, strong=attr in STRONG_JOB_ATTRS, text=text)
+
+    return candidates
+
+
 @dataclass
 class ReverseResolver:
     client: HTTPClient
@@ -228,13 +322,36 @@ class ReverseResolver:
         if not ats_url:
             ats_url = _find_ats_iframe(careers_html, careers_final_url)
         if not ats_url:
+            job_links = _find_job_detail_links(careers_html, careers_final_url)
+            ats_url = await self._find_ats_from_job_pages(job_links)
+        if not ats_url:
             return UnresolvedRecord(
                 input_url=input_url,
                 ats_name=None,
-                reason="No ATS URLs found on careers page (links/iframes checked)",
+                reason="No ATS URLs found on careers page (links/iframes/job details checked)",
             )
 
         return await self._build_record(ats_url, careers_final_url, careers_html)
+
+    async def _find_ats_from_job_pages(self, job_urls: Iterable[str]) -> str | None:
+        for job_url in list(job_urls)[:MAX_JOB_DETAIL_PAGES]:
+            if detect(job_url):
+                return job_url
+            validation = await self.client.validate(job_url)
+            if not _is_corporate_valid(
+                validation.status_code,
+                validation.is_sso_redirect,
+            ):
+                continue
+            html, final_url, _ = await self.client.fetch_html(validation.final_url)
+            if not html:
+                continue
+            ats_url = _find_ats_link(html, final_url)
+            if not ats_url:
+                ats_url = _find_ats_iframe(html, final_url)
+            if ats_url:
+                return ats_url
+        return None
 
     async def _build_record(
         self,
