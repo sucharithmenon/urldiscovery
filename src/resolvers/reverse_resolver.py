@@ -34,6 +34,17 @@ COMMON_CAREERS_PATHS = [
     "/opportunities",
 ]
 
+SUBDOMAIN_CAREERS_PREFIXES = [
+    "careers",
+    "jobs",
+]
+
+SUBDOMAIN_CAREERS_PATHS = [
+    "/jobs",
+    "/careers",
+    "/",
+]
+
 JOB_LINK_PATTERNS = [
     re.compile(r"/(job|jobs|position|positions|opening|openings|opportunit(?:y|ies)|requisition|req)/", re.IGNORECASE),
     re.compile(r"[?&](job|jobid|req|reqid|requisition)=", re.IGNORECASE),
@@ -189,6 +200,30 @@ def _iter_common_careers_paths(base_url: str) -> Iterable[str]:
     return [f"{base}{path}" for path in COMMON_CAREERS_PATHS]
 
 
+def _iter_subdomain_careers_paths(base_url: str) -> Iterable[str]:
+    parsed = urlparse(base_url)
+    scheme = parsed.scheme or "https"
+    base_domain = _domain_for(base_url)
+    if not base_domain:
+        return []
+    candidates: list[str] = []
+    for prefix in SUBDOMAIN_CAREERS_PREFIXES:
+        host = f"{prefix}.{base_domain}"
+        for path in SUBDOMAIN_CAREERS_PATHS:
+            candidates.append(f"{scheme}://{host}{path}")
+    return candidates
+
+
+def _iter_careers_variants(url: str) -> Iterable[str]:
+    if not url or has_careers_indicator(url):
+        return []
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        return []
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    return [f"{base}/jobs", f"{base}/careers"]
+
+
 def _looks_like_job_link(href: str, text: str) -> bool:
     if not href:
         return False
@@ -253,7 +288,7 @@ class ReverseResolver:
     mode: str = "strict"
 
     async def resolve(self, input_url: str) -> CompanyRecord | UnresolvedRecord:
-        corp_validation = await self.client.validate(input_url)
+        corp_validation, homepage_html = await self.client.fetch_and_validate(input_url)
         if not _is_corporate_valid(
             corp_validation.status_code,
             corp_validation.is_sso_redirect,
@@ -265,7 +300,6 @@ class ReverseResolver:
             )
 
         homepage_url = corp_validation.final_url
-        homepage_html, _, _ = await self.client.fetch_html(homepage_url)
         if not homepage_html:
             return UnresolvedRecord(
                 input_url=input_url,
@@ -277,40 +311,36 @@ class ReverseResolver:
         if not ats_url:
             ats_url = _find_ats_iframe(homepage_html, homepage_url)
         if ats_url:
-            return await self._build_record(ats_url, homepage_url, homepage_html)
+            careers_url = _find_careers_link(homepage_html, homepage_url)
+            candidates: list[str] = []
+            if careers_url:
+                candidates.extend(_iter_careers_variants(careers_url))
+                candidates.append(careers_url)
+            candidates.extend(_iter_common_careers_paths(homepage_url))
+            candidates.extend(_iter_subdomain_careers_paths(homepage_url))
+            careers_final_url, careers_html = await self._validate_first_careers(candidates)
+            return await self._build_record(
+                ats_url,
+                careers_final_url or homepage_url,
+                homepage_html,
+                careers_html=careers_html,
+            )
 
         careers_url = _find_careers_link(homepage_html, homepage_url)
-        if not careers_url:
-            for candidate in _iter_common_careers_paths(homepage_url):
-                validation = await self.client.validate(candidate)
-                if _is_corporate_valid(
-                    validation.status_code,
-                    validation.is_sso_redirect,
-                ):
-                    careers_url = validation.final_url
-                    break
+        candidates: list[str] = []
+        if careers_url:
+            candidates.extend(_iter_careers_variants(careers_url))
+            candidates.append(careers_url)
+        candidates.extend(_iter_common_careers_paths(homepage_url))
+        candidates.extend(_iter_subdomain_careers_paths(homepage_url))
+        careers_final_url, careers_html = await self._validate_first_careers(candidates)
 
-        if not careers_url:
+        if not careers_final_url:
             return UnresolvedRecord(
                 input_url=input_url,
                 ats_name=None,
                 reason="No careers page found on homepage or common paths",
             )
-
-        careers_validation = await self.client.validate(careers_url)
-        if not _is_corporate_valid(
-            careers_validation.status_code,
-            careers_validation.is_sso_redirect,
-        ):
-            return UnresolvedRecord(
-                input_url=input_url,
-                ats_name=None,
-                reason=f"Careers page invalid: {careers_validation.status_code}",
-            )
-
-        careers_html, careers_final_url, _ = await self.client.fetch_html(
-            careers_validation.final_url
-        )
         if not careers_html:
             return UnresolvedRecord(
                 input_url=input_url,
@@ -337,15 +367,15 @@ class ReverseResolver:
         for job_url in list(job_urls)[:MAX_JOB_DETAIL_PAGES]:
             if detect(job_url):
                 return job_url
-            validation = await self.client.validate(job_url)
+            validation, html = await self.client.fetch_and_validate(job_url)
             if not _is_corporate_valid(
                 validation.status_code,
                 validation.is_sso_redirect,
             ):
                 continue
-            html, final_url, _ = await self.client.fetch_html(validation.final_url)
             if not html:
                 continue
+            final_url = validation.final_url
             ats_url = _find_ats_link(html, final_url)
             if not ats_url:
                 ats_url = _find_ats_iframe(html, final_url)
@@ -353,11 +383,34 @@ class ReverseResolver:
                 return ats_url
         return None
 
+    async def _validate_first_careers(
+        self,
+        candidates: Iterable[str],
+    ) -> tuple[str | None, str | None]:
+        seen: set[str] = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            validation, html = await self.client.fetch_and_validate(candidate)
+            if not _is_corporate_valid(
+                validation.status_code,
+                validation.is_sso_redirect,
+            ):
+                continue
+            if not html:
+                continue
+            final_url = validation.final_url
+            return final_url, html
+        return None, None
+
     async def _build_record(
         self,
         ats_url: str,
         corporate_url: str,
         html: str,
+        *,
+        careers_html: str | None = None,
     ) -> CompanyRecord | UnresolvedRecord:
         detection = detect(ats_url)
         if not detection:
@@ -385,7 +438,10 @@ class ReverseResolver:
         domain = extract_domain(corporate_url) if corporate_url else None
 
         corporate_url_out = None
-        if corporate_url and (has_careers_indicator(corporate_url) or is_careers_page(html)):
+        validation_html = careers_html or html
+        if corporate_url and (
+            has_careers_indicator(corporate_url) or is_careers_page(validation_html)
+        ):
             corporate_url_out = corporate_url
 
         confidence = "verified"
