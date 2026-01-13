@@ -111,3 +111,7 @@ def batch(
     async def _run():
         await _process_urls(urls, output, unresolved, mode, method, concurrency)
     asyncio.run(_run())
+
+
+if __name__ == "__main__":
+    app()
