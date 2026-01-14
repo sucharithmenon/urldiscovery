@@ -33,6 +33,7 @@ QA_EXPORT_FIELDS = [
     "input_url",
     "reason",
     "attempted_at",
+    "qa_action",
     "company_ats_url",
     "company_name_clean",
     "company_domain",
@@ -42,6 +43,7 @@ QA_EXPORT_FIELDS = [
 
 QA_APPLY_FIELDS = [
     "input_url",
+    "qa_action",
     "company_ats_url",
     "company_name_clean",
     "company_domain",
@@ -75,6 +77,7 @@ def _write_unresolved_rows(path: str, rows: list[dict]) -> None:
                         "input_url": row.get("input_url", ""),
                         "reason": row.get("reason", ""),
                         "attempted_at": row.get("attempted_at", ""),
+                        "qa_action": row.get("qa_action", ""),
                         "company_ats_url": row.get("company_ats_url", ""),
                         "company_name_clean": row.get("company_name_clean", ""),
                         "company_domain": row.get("company_domain", ""),
@@ -135,6 +138,7 @@ def qa_export(
                     "input_url": row.get("input_url", ""),
                     "reason": row.get("reason", ""),
                     "attempted_at": row.get("attempted_at", ""),
+                    "qa_action": "resolve",
                     "company_ats_url": "",
                     "company_name_clean": "",
                     "company_domain": "",
@@ -196,11 +200,16 @@ def qa_apply(
         for idx, row in enumerate(qa_rows, start=1):
             input_url = (row.get("input_url") or "").strip()
             ats_url = (row.get("company_ats_url") or "").strip()
+            qa_action = (row.get("qa_action") or "").strip().lower()
             notes = (row.get("notes") or "").strip().lower()
-            if notes and any(token in notes for token in ("drop", "delete", "remove", "invalid", "nonexistent")):
+            if qa_action in {"drop", "delete", "remove", "invalid", "nonexistent"} or (
+                notes and any(token in notes for token in ("drop", "delete", "remove", "invalid", "nonexistent"))
+            ):
                 key = input_url or ats_url
                 if key:
                     dropped_inputs[key] = notes
+                continue
+            if qa_action in {"skip", "hold", "later"}:
                 continue
             if not ats_url:
                 if input_url:
