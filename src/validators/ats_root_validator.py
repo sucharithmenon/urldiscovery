@@ -32,6 +32,11 @@ ATS_HOSTS = {
     "WORKABLE": {"apply.workable.com"},
     "SMARTRECRUITERS": {"jobs.smartrecruiters.com", "careers.smartrecruiters.com"},
     "WORKDAY": {"myworkdayjobs.com"},
+    "TEAMTAILOR": {"jobs.teamtailor.com"},
+    "PINPOINT": {"jobs.pinpoint.com"},
+    "RECRUITEE": {"careers.recruitee.com"},
+    "HIRINGTHING": {"hiringthing.com"},
+    "JAZZHR": {"applytojob.com"},
 }
 
 JOB_LINK_PATTERNS = {
@@ -41,6 +46,11 @@ JOB_LINK_PATTERNS = {
     "WORKABLE": re.compile(r"/j/[A-Za-z0-9]+", re.IGNORECASE),
     "WORKDAY": re.compile(r"/job[s]?/[^\"'\\s>]+", re.IGNORECASE),
     "SMARTRECRUITERS": re.compile(r"/job[s]?/[^\"'\\s>]+", re.IGNORECASE),
+    "TEAMTAILOR": re.compile(r"/jobs/[^\"'\\s>]+", re.IGNORECASE),
+    "PINPOINT": re.compile(r"/jobs/[^\"'\\s>]+", re.IGNORECASE),
+    "RECRUITEE": re.compile(r"/o/[^\"'\\s>]+", re.IGNORECASE),
+    "HIRINGTHING": re.compile(r"/jobs/[^\"'\\s>]+", re.IGNORECASE),
+    "JAZZHR": re.compile(r"/apply/[^\"'\\s>]+", re.IGNORECASE),
 }
 
 EMPTY_STATE_RE = re.compile(
@@ -72,6 +82,24 @@ def _company_slug_in_path(path: str, slug: str) -> bool:
     if not path or not slug:
         return False
     return slug.lower().strip("/") in path.lower()
+
+
+def _company_slug_in_host(host: str, slug: str) -> bool:
+    if not host or not slug:
+        return False
+    host = host.lower()
+    slug = slug.lower().strip(".")
+    return host.startswith(f"{slug}.")
+
+
+def _company_slug_matches(expected_ats: str, parsed: urlparse, slug: str) -> bool:
+    if not slug:
+        return False
+    ats = expected_ats.upper()
+    host = parsed.netloc or ""
+    if ats in {"JAZZHR", "HIRINGTHING"}:
+        return _company_slug_in_host(host, slug)
+    return _company_slug_in_path(parsed.path or "", slug)
 
 
 def _is_marketing_or_login(final_url: str) -> bool:
@@ -158,7 +186,7 @@ def validate_ats_root_content(
         return result
     signals.append("ats_host_match")
 
-    if company_slug and not _company_slug_in_path(parsed.path or "", company_slug):
+    if company_slug and not _company_slug_matches(expected_ats, parsed, company_slug):
         signals.append("company_slug_mismatch")
         return result
     if company_slug:

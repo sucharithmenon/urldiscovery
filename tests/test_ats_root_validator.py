@@ -39,3 +39,33 @@ def test_validate_greenhouse_root_invalid_slug():
         html,
     )
     assert result.status == "invalid"
+
+
+def test_validate_jazzhr_root_valid():
+    html = """
+    <title>Acme - Career Page</title>
+    <a href="https://acme.applytojob.com/apply/abc123/Engineer">Engineer</a>
+    <a href="https://acme.applytojob.com/apply/def456/Designer">Designer</a>
+    """
+    result = validate_ats_root_content(
+        "https://acme.applytojob.com/apply",
+        "JAZZHR",
+        "acme",
+        html,
+    )
+    assert result.status == "valid"
+
+
+def test_validate_hiringthing_root_valid():
+    html = """
+    <title>Careers at Acme</title>
+    <a href="/jobs/123">Job 1</a>
+    <a href="/jobs/456">Job 2</a>
+    """
+    result = validate_ats_root_content(
+        "https://acme.hiringthing.com/jobs",
+        "HIRINGTHING",
+        "acme",
+        html,
+    )
+    assert result.status == "valid"
