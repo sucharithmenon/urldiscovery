@@ -12,6 +12,7 @@ from ..extractors.domain import extract_domain, extract_homepage
 from ..models import CompanyRecord, UnresolvedRecord
 from ..patterns.ats_patterns import detect, normalize
 from ..patterns.ats_fingerprints import detect_fingerprints
+from ..validators.ats_root_validator import validate_ats_root_content
 from ..patterns.careers_indicators import (
     COMMON_CAREERS_PATHS,
     has_careers_indicator,
@@ -134,6 +135,19 @@ class DirectResolver:
                     )
 
         ats_final_url = ats_validation.final_url
+        if slug:
+            validation_result = validate_ats_root_content(
+                ats_final_url,
+                ats_name,
+                slug,
+                ats_html,
+            )
+            if validation_result.status == "invalid":
+                return UnresolvedRecord(
+                    input_url=input_url,
+                    ats_name=ats_name,
+                    reason="ATS root validation failed",
+                )
 
         corp_result = extract_corporate_url(ats_html, ats_final_url)
         corp_url = None
