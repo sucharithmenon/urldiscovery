@@ -1,0 +1,13 @@
+{
+  "elapsed_sec": 5352.89,
+  "eta_sec": 89916.63,
+  "last_reason": "",
+  "last_result": "validated",
+  "processed": 2705,
+  "rate_per_min": 30.32,
+  "run_id": "20260114-070650_3feca7",
+  "total": 48143,
+  "unresolved": 1598,
+  "updated_at": "2026-01-14T08:36:04.174063",
+  "validated": 1107
+}
