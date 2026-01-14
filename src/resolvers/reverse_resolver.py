@@ -282,8 +282,7 @@ class ReverseResolver:
         self.logger = logger
 
     async def resolve(self, input_url: str) -> CompanyRecord | UnresolvedRecord:
-        if logger:
-            self.logger = logger
+        pass
         corp_validation, homepage_html = await self.client.fetch_and_validate(input_url)
         if not _is_corporate_valid(
             corp_validation.status_code,

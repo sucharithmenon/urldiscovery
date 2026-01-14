@@ -369,7 +369,30 @@ async def _process_urls(
     last_reason = ""
 
     for task in asyncio.as_completed(tasks):
-        result = await task
+        try:
+            result = await task
+        except Exception as e:
+            # Handle exceptions from resolve_one function  
+            error_record = UnresolvedRecord(
+                input_url="<unknown>",
+                ats_name="unknown",
+                reason=f"Exception in resolve_one: {str(e)}",
+                error_category="exception",
+                http_status=None,
+                final_url=None,
+                validation_signals=None,
+                attempted_at=datetime.now().isoformat()
+            )
+            append_unresolved_record(unresolved_path, error_record)
+            unresolved_count += 1
+            last_result = "exception"
+            last_reason = str(e)
+            if verbose:
+                print(f"[VERBOSE] 💥 Exception: {str(e)}")
+                print()
+            processed += 1
+            continue
+            
         if isinstance(result, CompanyRecord):
             append_company_record(output_path, result)
             resolved += 1
@@ -448,8 +471,10 @@ def resolve(
     url: str,
     mode: str = "strict",
     method: str = "auto",
-    output: str = "output/output.csv",
-    unresolved: str = "output/unresolved.csv",
+    output: str = typer.Option("output/output.csv", "--output"),
+    unresolved: str = typer.Option("output/unresolved.csv", "--unresolved"),
+    validated_output: str = typer.Option("output/validated.csv", "--validated-output"),
+    unresolved_output: str = typer.Option("output/unresolved.csv", "--unresolved-output"),
     dedupe: bool = typer.Option(True, "--dedupe/--no-dedupe"),
     overwrite: bool = typer.Option(True, "--overwrite/--no-overwrite"),
     track: bool = typer.Option(True, "--track/--no-track"),
@@ -465,14 +490,14 @@ def resolve(
         if track:
             run_context = create_run_context(
                 run_root,
-                output,
-                unresolved,
+                validated_output,
+                unresolved_output,
                 input_file=None,
             )
         await _process_urls(
             [url],
-            output,
-            unresolved,
+            validated_output,
+            unresolved_output,
             mode,
             method,
             concurrency=1,
