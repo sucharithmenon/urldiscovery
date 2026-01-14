@@ -53,7 +53,13 @@ async def _process_urls(
     method: str,
     concurrency: int,
     dedupe: bool,
+    overwrite: bool,
 ) -> None:
+    if overwrite:
+        for path in (output_path, unresolved_path):
+            target = Path(path)
+            if target.exists():
+                target.unlink()
     client = HTTPClient()
     direct = DirectResolver(client=client, mode=mode)
     breadcrumb = BreadcrumbResolver(client=client, mode=mode)
@@ -94,10 +100,20 @@ def resolve(
     output: str = "output/output.csv",
     unresolved: str = "output/unresolved.csv",
     dedupe: bool = True,
+    overwrite: bool = True,
 ):
     """Resolve a single URL."""
     async def _run():
-        await _process_urls([url], output, unresolved, mode, method, concurrency=1, dedupe=dedupe)
+        await _process_urls(
+            [url],
+            output,
+            unresolved,
+            mode,
+            method,
+            concurrency=1,
+            dedupe=dedupe,
+            overwrite=overwrite,
+        )
     asyncio.run(_run())
 
 
@@ -110,11 +126,21 @@ def batch(
     method: str = "auto",
     concurrency: int = 20,
     dedupe: bool = True,
+    overwrite: bool = True,
 ):
     """Process a batch of URLs from CSV."""
     urls = _load_urls(input_file)
     async def _run():
-        await _process_urls(urls, output, unresolved, mode, method, concurrency, dedupe)
+        await _process_urls(
+            urls,
+            output,
+            unresolved,
+            mode,
+            method,
+            concurrency,
+            dedupe,
+            overwrite,
+        )
     asyncio.run(_run())
 
 
