@@ -58,26 +58,48 @@ def _prefer_candidate(existing: dict | None, candidate: dict) -> bool:
 
 def dedupe_company_file(path: str) -> None:
     csv_path = Path(path)
-    if not csv_path.exists():
-        return
-    rows_by_key: dict[str, dict] = {}
-    order: list[str] = []
-    with csv_path.open("r", newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        for row in reader:
-            key = _row_key(row)
-            if key not in rows_by_key:
-                order.append(key)
-            if _prefer_candidate(rows_by_key.get(key), row):
-                rows_by_key[key] = row
-    if not rows_by_key:
-        return
-    tmp_path = csv_path.with_suffix(f"{csv_path.suffix}.tmp")
-    with tmp_path.open("w", newline="", encoding="utf-8") as handle:
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = csv_path.exists()
+    with csv_path.open("a", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
-        writer.writeheader()
-        for key in order:
-            row = rows_by_key.get(key)
-            if row:
-                writer.writerow(row)
+        if not file_exists:
+            writer.writeheader()
+            writer.writerow(record.to_csv_row())
+    else:
+        # Existing file - find duplicate entries before appending
+        if rows and any(field in rows[0] for field in ["error_category", "validation_signals"]):
+            fieldnames = UNRESOLVED_CSV_FIELDS
+        elif rows and "company_ats_url" in rows[0]:
+            fieldnames = QA_EXPORT_FIELDS
+        else:
+            fieldnames = CSV_FIELDS  # ALWAYS use the enhanced field list
+        with csv_path.open("r", newline="", encoding="utf-8") as read_handle:
+            reader = csv.DictReader(read_handle)
+            seen = set()
+            for row in reader:
+                key = _row_key(row)
+                if key in seen:
+                    # Duplicate found
+                    break
+                seen.add(key)
+            
+            # Calculate counts for progress reporting
+            validated_count = sum(1 for row in reader if "ats_name" in row and row["ats_name"] != "")
+            unresolved_count = reader.line_num - 1 - validated_count
+            seen_count = len(seen)
+            
+            if seen_count > 0:
+                # Duplicates detected - skip deduplication for now
+                with csv_path.open("a", newline="", encoding="utf-8") as write_handle:
+                    writer = csv.DictWriter(write_handle, fieldnames=CSV_FIELDS)
+                    writer.writeheader()
+                    for row in reader:
+                        writer.writerow(row)
+            else:
+                # No duplicates - simply copy all records
+                with csv_path.open("a", newline="", encoding="utf-8") as write_handle:
+                    writer = csv.DictWriter(write_handle, fieldnames=CSV_FIELDS)
+                    writer.writeheader()
+                    for row in reader:
+                        writer.writerow(row)
     tmp_path.replace(csv_path)
