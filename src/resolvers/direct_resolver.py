@@ -19,6 +19,7 @@ from ..patterns.careers_indicators import (
     is_careers_page,
 )
 from ..validators.http_validator import HTTPClient
+from ..utils.logging import log_validation_signals, log_http_validation
 
 
 _URL_RE = re.compile(r"https?://[^\\s'\\\"<>]+", re.IGNORECASE)
@@ -75,15 +76,29 @@ def _is_corporate_valid(status_code: int, is_sso_redirect: bool) -> bool:
 class DirectResolver:
     client: HTTPClient
     mode: str = "strict"
+    logger = None  # Optional logger for debugging
 
-    async def resolve(self, input_url: str) -> CompanyRecord | UnresolvedRecord:
+    async def resolve(self, input_url: str, logger=None) -> CompanyRecord | UnresolvedRecord:
+        if logger:
+            self.logger = logger
+            
         detection = detect(input_url)
+        if self.logger:
+            self.logger.debug(f"Processing URL: {input_url}")
+            self.logger.debug(f"ATS detection: {detection}")
+            
         if not detection:
-            return UnresolvedRecord(
-                input_url=input_url,
-                ats_name=None,
-                reason="Not a recognized ATS URL",
-            )
+        if not detection:
+record = UnresolvedRecord(
+                        input_url=input_url,
+                        ats_name=None,
+                        reason="Not a recognized ATS URL",
+                        error_category="detection_error",
+                        validation_signals=["no_ats_pattern"],
+                    )
+        if self.logger:
+            log_validation_signals(["no_ats_pattern"], input_url, self.logger)
+        return record
 
         ats_name, slug = detection
         root_url = normalize(input_url)
@@ -128,11 +143,31 @@ class DirectResolver:
                         recovered = True
                         break
                 if not recovered:
-                    return UnresolvedRecord(
+                    error_category = "http_error" if ats_validation.status_code >= 400 else "validation_error"
+                    if ats_validation.status_code == 404:
+                        error_category = "not_found"
+                    elif ats_validation.status_code >= 500:
+                        error_category = "server_error"
+                    
+                    record = UnresolvedRecord(
                         input_url=input_url,
                         ats_name=ats_name,
                         reason=f"ATS URL invalid: {ats_validation.status_code}",
+                        error_category=error_category,
+                        http_status=ats_validation.status_code,
+                        final_url=ats_validation.final_url,
+                        validation_signals=[f"http_{ats_validation.status_code}"],
                     )
+        if self.logger:
+            log_http_validation(
+                input_url, 
+                ats_validation.status_code, 
+                ats_validation.final_url,
+                ats_validation.is_soft_404,
+                ats_validation.is_sso_redirect,
+                self.logger
+            )
+        return record
 
         ats_final_url = ats_validation.final_url
         if slug:
@@ -147,6 +182,10 @@ class DirectResolver:
                     input_url=input_url,
                     ats_name=ats_name,
                     reason="ATS root validation failed",
+                    error_category="validation_error",
+                    http_status=ats_validation.status_code,
+                    final_url=ats_validation.final_url,
+                    validation_signals=validation_result.signals,
                 )
 
         corp_result = extract_corporate_url(ats_html, ats_final_url)

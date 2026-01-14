@@ -63,7 +63,11 @@ SSO_REDIRECT_DOMAINS: list[str] = [
 # Patterns that indicate a soft-404 (200 status but actually a failure)
 SOFT_404_PATTERNS: list[str] = [
     r"page\s*not\s*found",
-    r"404",
+    r"404\s*not\s*found",
+    r"404\s*error",
+    r"error\s*404",
+    r"not\s*found.*404",
+    r"404.*not\s*found",
     r"no\s*jobs?\s*(found|available|posted|open)",
     r"this\s*page\s*(doesn't|does not)\s*exist",
     r"we\s*couldn't\s*find",

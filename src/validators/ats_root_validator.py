@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from ..extractors.company_name import extract as extract_company_name
 
 
-ATSStatus = Literal["valid", "valid_empty", "invalid"]
+ATSStatus = Literal["valid", "valid_empty", "valid_limited", "invalid"]
 
 
 @dataclass(frozen=True)
@@ -117,6 +117,7 @@ def _extract_job_links(html: str, base_url: str, expected_ats: str) -> list[str]
     soup = BeautifulSoup(html, "html.parser")
     links: set[str] = set()
 
+    # Extract links from anchor tags
     for link in soup.find_all("a", href=True):
         href = link.get("href", "")
         if not href:
@@ -125,12 +126,24 @@ def _extract_job_links(html: str, base_url: str, expected_ats: str) -> list[str]
         if pattern and pattern.search(full):
             links.add(full)
 
-    if not pattern:
-        return list(links)
-
-    for match in pattern.findall(html):
-        full = urljoin(base_url, match)
-        links.add(full)
+    # Also search for job links in raw HTML (for dynamic content)
+    if pattern:
+        for match in pattern.findall(html):
+            full = urljoin(base_url, match)
+            links.add(full)
+    
+    # Additional fallback: look for common job link patterns if primary pattern fails
+    if not links and expected_ats.upper() == "GREENHOUSE":
+        # Greenhouse sometimes uses different patterns
+        gh_patterns = [
+            re.compile(r"/jobs/\d+", re.IGNORECASE),
+            re.compile(r'"id":\d+', re.IGNORECASE),  # Job IDs in JSON
+        ]
+        for fallback_pattern in gh_patterns:
+            for match in fallback_pattern.findall(html):
+                if match.isdigit():
+                    full = urljoin(base_url, f"/jobs/{match}")
+                    links.add(full)
 
     return list(links)
 
@@ -155,13 +168,85 @@ def _extract_json_ld_jobs(html: str) -> int:
     return count
 
 
+def _extract_job_count_from_text(html: str) -> int:
+    """Extract job count from text patterns like '36 jobs'."""
+    if not html:
+        return 0
+    
+    # Look for patterns like "36 jobs", "15 openings", etc.
+    job_count_patterns = [
+        re.compile(r"(\d+)\s+jobs?", re.IGNORECASE),
+        re.compile(r"(\d+)\s+openings?", re.IGNORECASE),
+        re.compile(r"(\d+)\s+positions?", re.IGNORECASE),
+        re.compile(r"job[s]?.*?(\d+)", re.IGNORECASE),
+        re.compile(r"(\d+).*?job[s]?", re.IGNORECASE),
+    ]
+    
+    for pattern in job_count_patterns:
+        match = pattern.search(html)
+        if match:
+            try:
+                count = int(match.group(1))
+                if count > 0:
+                    return count
+            except ValueError:
+                continue
+    
+    return 0
+
+
 def _company_scope_confirmed(html: str, slug: str) -> bool:
     if not html:
         return False
-    if slug and slug.lower() in html.lower():
-        return True
+    
+    # More flexible slug matching
+    if slug:
+        slug_lower = slug.lower()
+        html_lower = html.lower()
+        
+        # Direct slug match
+        if slug_lower in html_lower:
+            return True
+        
+        # Partial slug matching (handle hyphens, underscores, etc.)
+        slug_variants = [
+            slug_lower.replace("-", "").replace("_", ""),
+            slug_lower.replace("-", "_"),
+            slug_lower.replace("_", "-"),
+        ]
+        for variant in slug_variants:
+            if variant in html_lower:
+                return True
+    
+    # Try company name extraction with both strict and lenient modes
     company_name = extract_company_name(html, slug=slug, mode="strict")
-    return bool(company_name)
+    if not company_name:
+        company_name = extract_company_name(html, slug=slug, mode="lenient")
+    
+    if company_name:
+        return True
+    
+    # Additional fallback: check for company identification in page title or meta tags
+    soup = BeautifulSoup(html, "html.parser")
+    
+    # Check title tag
+    title = soup.find("title")
+    if title and slug and slug.lower() in title.get_text().lower():
+        return True
+    
+    # Check meta description
+    meta_desc = soup.find("meta", attrs={"name": "description"})
+    if meta_desc and slug and slug.lower() in meta_desc.get("content", "").lower():
+        return True
+    
+    # Check for common ATS branding elements
+    ats_branding = soup.find_all(text=re.compile(r"jobs\s+at\s+\w+", re.IGNORECASE))
+    if ats_branding and slug:
+        for branding in ats_branding:
+            if slug.lower() in branding.lower():
+                return True
+    
+    return False
 
 
 def validate_ats_root_content(
@@ -219,10 +304,23 @@ def validate_ats_root_content(
 
     job_links = _extract_job_links(html, final_url, expected_ats)
     job_count = len(set(job_links))
+    
+    # Check for job structure with lower threshold
     if job_count >= 2:
         signals.append("job_structure_detected")
         return ATSRootValidationResult(
             status="valid",
+            ats=expected_ats,
+            job_count=job_count,
+            empty_state=False,
+            signals=signals,
+        )
+    
+    # Check for limited job structure (1 job found)
+    if job_count >= 1:
+        signals.append("limited_job_structure_detected")
+        return ATSRootValidationResult(
+            status="valid_limited",
             ats=expected_ats,
             job_count=job_count,
             empty_state=False,
@@ -236,6 +334,29 @@ def validate_ats_root_content(
             status="valid",
             ats=expected_ats,
             job_count=json_job_count,
+            empty_state=False,
+            signals=signals,
+        )
+    
+    # Check for limited JSON job structure (1 job found)
+    if json_job_count >= 1:
+        signals.append("limited_job_structure_detected")
+        return ATSRootValidationResult(
+            status="valid_limited",
+            ats=expected_ats,
+            job_count=json_job_count,
+            empty_state=False,
+            signals=signals,
+        )
+
+    # Additional fallback: check for job count indicators in text
+    job_count_text = _extract_job_count_from_text(html)
+    if job_count_text > 0:
+        signals.append("job_count_text_detected")
+        return ATSRootValidationResult(
+            status="valid_limited",
+            ats=expected_ats,
+            job_count=job_count_text,
             empty_state=False,
             signals=signals,
         )

@@ -69,6 +69,22 @@ class UnresolvedRecord(BaseModel):
     reason: str = Field(
         description="Why this record could not be resolved"
     )
+    error_category: Optional[str] = Field(
+        default=None,
+        description="Category of error (http_error, validation_error, extraction_error, etc.)"
+    )
+    validation_signals: Optional[list[str]] = Field(
+        default=None,
+        description="List of validation signals for debugging"
+    )
+    http_status: Optional[int] = Field(
+        default=None,
+        description="HTTP status code received"
+    )
+    final_url: Optional[str] = Field(
+        default=None,
+        description="Final URL after redirects"
+    )
     attempted_at: datetime = Field(
         default_factory=datetime.utcnow,
         description="When resolution was attempted"
@@ -80,6 +96,10 @@ class UnresolvedRecord(BaseModel):
             "input_url": self.input_url,
             "ats_name": self.ats_name or "",
             "reason": self.reason,
+            "error_category": self.error_category or "",
+            "validation_signals": ";".join(self.validation_signals or []) if self.validation_signals else "",
+            "http_status": str(self.http_status or ""),
+            "final_url": self.final_url or "",
             "attempted_at": self.attempted_at.isoformat(),
         }
 
@@ -134,5 +154,9 @@ UNRESOLVED_CSV_FIELDS = [
     "input_url",
     "ats_name",
     "reason",
+    "error_category",
+    "validation_signals",
+    "http_status",
+    "final_url",
     "attempted_at",
 ]

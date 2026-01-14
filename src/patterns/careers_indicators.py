@@ -22,6 +22,18 @@ CAREERS_PATH_PATTERNS = [
     r"/en/careers/?",
 ]
 
+COMMON_CAREERS_PATHS = [
+    "/careers",
+    "/jobs",
+    "/about/careers",
+    "/company/careers",
+    "/en/careers",
+    "/work-with-us",
+    "/join-us",
+    "/join",
+    "/opportunities",
+]
+
 CAREERS_LINK_TEXT = [
     "careers",
     "career",

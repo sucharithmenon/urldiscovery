@@ -11,7 +11,7 @@ from typing import Iterable
 
 import typer
 
-from .models import CompanyRecord, UnresolvedRecord
+from .models import CompanyRecord, UnresolvedRecord, UNRESOLVED_CSV_FIELDS
 from .output.csv_writer import append_company_record, dedupe_company_file
 from .output.run_tracker import (
     create_run_context,
@@ -64,9 +64,13 @@ def _load_csv_rows(path: str) -> list[dict]:
 def _write_unresolved_rows(path: str, rows: list[dict]) -> None:
     csv_path = Path(path)
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["input_url", "ats_name", "reason", "attempted_at"]
-    if rows and "company_ats_url" in rows[0]:
+    # Check if using new enhanced format or legacy format
+    if rows and any(field in rows[0] for field in ["error_category", "validation_signals"]):
+        fieldnames = UNRESOLVED_CSV_FIELDS
+    elif rows and "company_ats_url" in rows[0]:
         fieldnames = QA_EXPORT_FIELDS
+    else:
+        fieldnames = ["input_url", "ats_name", "reason", "attempted_at"]
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
@@ -91,6 +95,10 @@ def _write_unresolved_rows(path: str, rows: list[dict]) -> None:
                         "input_url": row.get("input_url", ""),
                         "ats_name": row.get("ats_name", ""),
                         "reason": row.get("reason", ""),
+                        "error_category": row.get("error_category", ""),
+                        "validation_signals": row.get("validation_signals", ""),
+                        "http_status": row.get("http_status", ""),
+                        "final_url": row.get("final_url", ""),
                         "attempted_at": row.get("attempted_at", ""),
                     }
                 )
@@ -315,6 +323,7 @@ async def _process_urls(
     progress: bool,
     progress_every: int,
     progress_interval: float,
+    verbose: bool,
 ) -> None:
     if overwrite:
         for path in (output_path, unresolved_path):
@@ -360,11 +369,29 @@ async def _process_urls(
             resolved += 1
             last_result = "validated"
             last_reason = ""
+            if verbose:
+                print(f"[VERBOSE] ✅ Resolved: {result.company_ats_url}")
+                print(f"[VERBOSE]    Company: {result.company_name_clean}")
+                print(f"[VERBOSE]    Domain: {result.company_domain}")
+                print(f"[VERBOSE]    Corporate: {result.corporate_url}")
+                print(f"[VERBOSE]    Method: {result.discovery_method}")
+                print(f"[VERBOSE]    Confidence: {result.confidence}")
+                print()
         else:
             append_unresolved_record(unresolved_path, result)
             unresolved_count += 1
             last_result = "unresolved"
             last_reason = result.reason
+            if verbose:
+                print(f"[VERBOSE] ❌ Failed: {result.input_url}")
+                print(f"[VERBOSE]    ATS: {result.ats_name}")
+                print(f"[VERBOSE]    Reason: {result.reason}")
+                print(f"[VERBOSE]    Category: {result.error_category}")
+                print(f"[VERBOSE]    HTTP Status: {result.http_status}")
+                print(f"[VERBOSE]    Final URL: {result.final_url}")
+                if result.validation_signals:
+                    print(f"[VERBOSE]    Signals: {', '.join(result.validation_signals)}")
+                print()
         processed += 1
 
         if progress:
@@ -424,6 +451,7 @@ def resolve(
     progress: bool = typer.Option(True, "--progress/--no-progress"),
     progress_every: int = 1,
     progress_interval: float = 1.0,
+    verbose: bool = typer.Option(False, "--verbose/-v"),
 ):
     """Resolve a single URL."""
     async def _run():
@@ -448,6 +476,7 @@ def resolve(
             progress=progress,
             progress_every=progress_every,
             progress_interval=progress_interval,
+            verbose=verbose,
         )
     asyncio.run(_run())
 
@@ -468,6 +497,7 @@ def batch(
     progress: bool = typer.Option(True, "--progress/--no-progress"),
     progress_every: int = 25,
     progress_interval: float = 10.0,
+    verbose: bool = typer.Option(False, "--verbose/-v"),
 ):
     """Process a batch of URLs from CSV."""
     urls = _load_urls(input_file)
@@ -494,6 +524,7 @@ def batch(
             progress=progress,
             progress_every=progress_every,
             progress_interval=progress_interval,
+            verbose=verbose,
         )
     asyncio.run(_run())
 
