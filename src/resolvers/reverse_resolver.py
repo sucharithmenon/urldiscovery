@@ -15,24 +15,13 @@ from ..extractors.domain import extract_domain
 from ..models import CompanyRecord, UnresolvedRecord
 from ..patterns.ats_patterns import detect, normalize
 from ..patterns.careers_indicators import (
+    COMMON_CAREERS_PATHS,
     has_careers_indicator,
     has_careers_text,
     is_careers_page,
 )
 from ..validators.http_validator import HTTPClient
 
-
-COMMON_CAREERS_PATHS = [
-    "/careers",
-    "/jobs",
-    "/about/careers",
-    "/company/careers",
-    "/en/careers",
-    "/work-with-us",
-    "/join-us",
-    "/join",
-    "/opportunities",
-]
 
 SUBDOMAIN_CAREERS_PREFIXES = [
     "careers",
@@ -423,19 +412,28 @@ class ReverseResolver:
         ats_name, slug = detection
         normalized = normalize(ats_url)
         ats_validation = await self.client.validate(normalized)
+        ats_inferred = False
         if not _is_valid_validation(
             ats_validation.status_code,
             ats_validation.is_soft_404,
             ats_validation.is_sso_redirect,
         ):
-            return UnresolvedRecord(
-                input_url=corporate_url,
-                ats_name=ats_name,
-                reason=f"ATS URL invalid: {ats_validation.status_code}",
-            )
+            if (
+                self.mode != "strict"
+                and ats_validation.status_code > 0
+                and ats_validation.status_code < 400
+                and ats_validation.is_soft_404
+                and not ats_validation.is_sso_redirect
+            ):
+                ats_inferred = True
+            else:
+                return UnresolvedRecord(
+                    input_url=corporate_url,
+                    ats_name=ats_name,
+                    reason=f"ATS URL invalid: {ats_validation.status_code}",
+                )
 
-        company_name = extract_company_name(html, slug=slug, mode="strict")
-        domain = extract_domain(corporate_url) if corporate_url else None
+        company_name = extract_company_name(html, slug=slug, mode=self.mode)
 
         corporate_url_out = None
         validation_html = careers_html or html
@@ -443,11 +441,11 @@ class ReverseResolver:
             has_careers_indicator(corporate_url) or is_careers_page(validation_html)
         ):
             corporate_url_out = corporate_url
+        domain = extract_domain(corporate_url_out) if corporate_url_out else None
 
         confidence = "verified"
-        if self.mode != "strict":
-            if corporate_url_out is None:
-                confidence = "inferred"
+        if not company_name or corporate_url_out is None or ats_inferred:
+            confidence = "inferred"
 
         return CompanyRecord(
             company_ats_name=ats_name,
