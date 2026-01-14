@@ -23,6 +23,21 @@ def test_company_name_inactive_career_page_cleanup():
     assert extract_company_name(html, slug="jazzhr", mode="strict") == "JazzHR"
 
 
+def test_company_name_current_openings_cleanup():
+    html = "<title>Acme Corp - Current Openings</title>"
+    assert extract_company_name(html, slug="acme", mode="strict") == "Acme Corp"
+
+
+def test_company_name_current_openings_prefix_cleanup():
+    html = "<title>Current Openings - Beta LLC</title>"
+    assert extract_company_name(html, slug="beta", mode="strict") == "Beta LLC"
+
+
+def test_company_name_search_jobs_prefix_cleanup():
+    html = "<title>Search Jobs | Marriott International</title>"
+    assert extract_company_name(html, slug="marriott", mode="strict") == "Marriott International"
+
+
 def test_corporate_url_extractor():
     html = "<a href=\"https://www.example.com/careers\">Careers</a>"
     result = extract_corporate_url(html, "https://boards.greenhouse.io/example")

@@ -14,6 +14,7 @@ _PREFIXES = [
     re.compile(r"^jobs?\s*(at|@)\s*", re.IGNORECASE),
     re.compile(r"^join\s*", re.IGNORECASE),
     re.compile(r"^work\s*(at|with)\s*", re.IGNORECASE),
+    re.compile(r"^(current\s+openings?|open\s+positions?|job\s+openings?|search\s+jobs?)\s*[-|:]\s*", re.IGNORECASE),
 ]
 
 _SUFFIXES = [
@@ -21,6 +22,8 @@ _SUFFIXES = [
     re.compile(r"\s*[-|]\s*jobs?$", re.IGNORECASE),
     re.compile(r"\s*[-|]\s*hiring$", re.IGNORECASE),
     re.compile(r"\s*[-|:]\s*(inactive\s*)?career page$", re.IGNORECASE),
+    re.compile(r"\s*[-|:]\s*(current\s+openings?|open\s+positions?|job\s+openings?)$", re.IGNORECASE),
+    re.compile(r"\s*[-|:]\s*(career|job)\s+opportunities$", re.IGNORECASE),
     re.compile(r"\s*careers?$", re.IGNORECASE),
     re.compile(r"\s*jobs?$", re.IGNORECASE),
 ]
