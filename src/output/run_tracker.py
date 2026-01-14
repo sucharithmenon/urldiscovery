@@ -40,6 +40,7 @@ class RunContext:
     run_unresolved_path: Path
     input_snapshot_path: Optional[Path]
     summary_path: Path
+    progress_path: Path
     index_path: Path
 
 
@@ -84,6 +85,7 @@ def create_run_context(
         run_unresolved_path=run_dir / "unresolved.csv",
         input_snapshot_path=input_snapshot_path,
         summary_path=run_dir / "summary.json",
+        progress_path=run_dir / "progress.json",
         index_path=Path(run_root) / "index.csv",
     )
 
@@ -155,3 +157,33 @@ def finalize_run(context: RunContext) -> None:
                 "top_reason": top_reason,
             }
         )
+
+
+def update_progress(
+    context: RunContext,
+    *,
+    processed: int,
+    total: int,
+    validated: int,
+    unresolved: int,
+    elapsed_sec: float,
+    rate_per_min: float,
+    eta_sec: float | None,
+    last_result: str | None = None,
+    last_reason: str | None = None,
+) -> None:
+    payload = {
+        "run_id": context.run_id,
+        "processed": processed,
+        "total": total,
+        "validated": validated,
+        "unresolved": unresolved,
+        "elapsed_sec": round(elapsed_sec, 2),
+        "rate_per_min": round(rate_per_min, 2),
+        "eta_sec": None if eta_sec is None else round(eta_sec, 2),
+        "last_result": last_result or "",
+        "last_reason": last_reason or "",
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    with context.progress_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)

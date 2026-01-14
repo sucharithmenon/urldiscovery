@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import time
 from pathlib import Path
 from typing import Iterable
 
@@ -11,7 +12,12 @@ import typer
 
 from .models import CompanyRecord, UnresolvedRecord
 from .output.csv_writer import append_company_record, dedupe_company_file
-from .output.run_tracker import create_run_context, finalize_run, RunContext
+from .output.run_tracker import (
+    create_run_context,
+    finalize_run,
+    update_progress,
+    RunContext,
+)
 from .output.unresolved_writer import append_unresolved_record
 from .patterns.ats_patterns import detect, is_job_url
 from .validators.http_validator import HTTPClient
@@ -56,12 +62,19 @@ async def _process_urls(
     dedupe: bool,
     overwrite: bool,
     run_context: RunContext | None,
+    progress: bool,
+    progress_every: int,
+    progress_interval: float,
 ) -> None:
     if overwrite:
         for path in (output_path, unresolved_path):
             target = Path(path)
             if target.exists():
                 target.unlink()
+    url_list = list(urls)
+    total = len(url_list)
+    if progress:
+        print(f"Starting {total} URLs -> {output_path}, {unresolved_path}")
     client = HTTPClient()
     direct = DirectResolver(client=client, mode=mode)
     breadcrumb = BreadcrumbResolver(client=client, mode=mode)
@@ -80,14 +93,65 @@ async def _process_urls(
                 return await breadcrumb.resolve(url)
             return await reverse.resolve(url)
 
-    tasks = [asyncio.create_task(resolve_one(url)) for url in urls]
+    tasks = [asyncio.create_task(resolve_one(url)) for url in url_list]
+
+    processed = 0
+    resolved = 0
+    unresolved_count = 0
+    last_print = time.monotonic()
+    started = last_print
+    last_result = ""
+    last_reason = ""
 
     for task in asyncio.as_completed(tasks):
         result = await task
         if isinstance(result, CompanyRecord):
             append_company_record(output_path, result)
+            resolved += 1
+            last_result = "validated"
+            last_reason = ""
         else:
             append_unresolved_record(unresolved_path, result)
+            unresolved_count += 1
+            last_result = "unresolved"
+            last_reason = result.reason
+        processed += 1
+
+        if progress:
+            now = time.monotonic()
+            should_print = (
+                processed == total
+                or (progress_every > 0 and processed % progress_every == 0)
+                or (now - last_print) >= progress_interval
+            )
+            if should_print:
+                elapsed = now - started
+                rate = processed / elapsed if elapsed > 0 else 0.0
+                rate_per_min = rate * 60
+                eta_sec = None
+                if rate > 0 and total:
+                    eta_sec = max(0.0, (total - processed) / rate)
+                percent = (processed / total * 100.0) if total else 100.0
+                eta_display = f"{int(eta_sec)}s" if eta_sec is not None else "n/a"
+                print(
+                    f"[progress] {processed}/{total} ({percent:.1f}%) "
+                    f"validated={resolved} unresolved={unresolved_count} "
+                    f"rate={rate_per_min:.1f}/min eta={eta_display}"
+                )
+                if run_context:
+                    update_progress(
+                        run_context,
+                        processed=processed,
+                        total=total,
+                        validated=resolved,
+                        unresolved=unresolved_count,
+                        elapsed_sec=elapsed,
+                        rate_per_min=rate_per_min,
+                        eta_sec=eta_sec,
+                        last_result=last_result,
+                        last_reason=last_reason,
+                    )
+                last_print = now
 
     await client.close()
     if dedupe:
@@ -107,6 +171,9 @@ def resolve(
     overwrite: bool = True,
     track: bool = True,
     run_root: str = "runs",
+    progress: bool = True,
+    progress_every: int = 1,
+    progress_interval: float = 1.0,
 ):
     """Resolve a single URL."""
     async def _run():
@@ -128,6 +195,9 @@ def resolve(
             dedupe=dedupe,
             overwrite=overwrite,
             run_context=run_context,
+            progress=progress,
+            progress_every=progress_every,
+            progress_interval=progress_interval,
         )
     asyncio.run(_run())
 
@@ -145,6 +215,9 @@ def batch(
     track: bool = True,
     run_root: str = "runs",
     snapshot_input: bool = True,
+    progress: bool = True,
+    progress_every: int = 25,
+    progress_interval: float = 10.0,
 ):
     """Process a batch of URLs from CSV."""
     urls = _load_urls(input_file)
@@ -168,6 +241,9 @@ def batch(
             dedupe,
             overwrite,
             run_context=run_context,
+            progress=progress,
+            progress_every=progress_every,
+            progress_interval=progress_interval,
         )
     asyncio.run(_run())
 
