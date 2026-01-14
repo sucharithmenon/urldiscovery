@@ -11,6 +11,7 @@ import typer
 
 from .models import CompanyRecord, UnresolvedRecord
 from .output.csv_writer import append_company_record, dedupe_company_file
+from .output.run_tracker import create_run_context, finalize_run, RunContext
 from .output.unresolved_writer import append_unresolved_record
 from .patterns.ats_patterns import detect, is_job_url
 from .validators.http_validator import HTTPClient
@@ -54,6 +55,7 @@ async def _process_urls(
     concurrency: int,
     dedupe: bool,
     overwrite: bool,
+    run_context: RunContext | None,
 ) -> None:
     if overwrite:
         for path in (output_path, unresolved_path):
@@ -90,6 +92,8 @@ async def _process_urls(
     await client.close()
     if dedupe:
         dedupe_company_file(output_path)
+    if run_context:
+        finalize_run(run_context)
 
 
 @app.command()
@@ -101,9 +105,19 @@ def resolve(
     unresolved: str = "output/unresolved.csv",
     dedupe: bool = True,
     overwrite: bool = True,
+    track: bool = True,
+    run_root: str = "runs",
 ):
     """Resolve a single URL."""
     async def _run():
+        run_context = None
+        if track:
+            run_context = create_run_context(
+                run_root,
+                output,
+                unresolved,
+                input_file=None,
+            )
         await _process_urls(
             [url],
             output,
@@ -113,6 +127,7 @@ def resolve(
             concurrency=1,
             dedupe=dedupe,
             overwrite=overwrite,
+            run_context=run_context,
         )
     asyncio.run(_run())
 
@@ -127,10 +142,22 @@ def batch(
     concurrency: int = 20,
     dedupe: bool = True,
     overwrite: bool = True,
+    track: bool = True,
+    run_root: str = "runs",
+    snapshot_input: bool = True,
 ):
     """Process a batch of URLs from CSV."""
     urls = _load_urls(input_file)
     async def _run():
+        run_context = None
+        if track:
+            run_context = create_run_context(
+                run_root,
+                output,
+                unresolved,
+                input_file=input_file,
+                snapshot_input=snapshot_input,
+            )
         await _process_urls(
             urls,
             output,
@@ -140,6 +167,7 @@ def batch(
             concurrency,
             dedupe,
             overwrite,
+            run_context=run_context,
         )
     asyncio.run(_run())
 
