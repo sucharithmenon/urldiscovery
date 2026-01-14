@@ -69,7 +69,7 @@ class HTTPClient:
         async with limiter:
             return await self._client.get(url)
 
-    async def validate(self, url: str) -> ValidationResult:
+    async def fetch_and_validate(self, url: str) -> tuple[ValidationResult, str]:
         try:
             response = await self._request(url)
             redirect_chain = [r.url.__str__() for r in response.history]
@@ -77,29 +77,39 @@ class HTTPClient:
             status_code = response.status_code
             chain = redirect_chain + [final_url]
             is_sso = _is_sso_redirect(chain)
+            body = response.text or ""
             is_soft_404 = False
             if status_code == 200:
-                body = response.text or ""
                 is_soft_404 = bool(_SOFT_404_RE.search(body))
-            return ValidationResult(
-                url=url,
-                final_url=final_url,
-                status_code=status_code,
-                redirect_chain=redirect_chain,
-                is_soft_404=is_soft_404,
-                is_sso_redirect=is_sso,
-                error=None,
+            return (
+                ValidationResult(
+                    url=url,
+                    final_url=final_url,
+                    status_code=status_code,
+                    redirect_chain=redirect_chain,
+                    is_soft_404=is_soft_404,
+                    is_sso_redirect=is_sso,
+                    error=None,
+                ),
+                body,
             )
         except httpx.RequestError as exc:
-            return ValidationResult(
-                url=url,
-                final_url=url,
-                status_code=0,
-                redirect_chain=[],
-                is_soft_404=False,
-                is_sso_redirect=False,
-                error=str(exc),
+            return (
+                ValidationResult(
+                    url=url,
+                    final_url=url,
+                    status_code=0,
+                    redirect_chain=[],
+                    is_soft_404=False,
+                    is_sso_redirect=False,
+                    error=str(exc),
+                ),
+                "",
             )
+
+    async def validate(self, url: str) -> ValidationResult:
+        validation, _ = await self.fetch_and_validate(url)
+        return validation
 
     async def fetch_html(self, url: str) -> tuple[str, str, int]:
         response = await self._request(url)

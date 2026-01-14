@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+from urllib.parse import urljoin
 
 from ..extractors.company_name import extract as extract_company_name
 from ..extractors.corporate_url import extract as extract_corporate_url
 from ..extractors.domain import extract_domain, extract_homepage
 from ..models import CompanyRecord, UnresolvedRecord
 from ..patterns.ats_patterns import detect, normalize
+from ..patterns.ats_fingerprints import detect_fingerprints
 from ..patterns.careers_indicators import (
     COMMON_CAREERS_PATHS,
     has_careers_indicator,
     is_careers_page,
 )
 from ..validators.http_validator import HTTPClient
+
+
+_URL_RE = re.compile(r"https?://[^\\s'\\\"<>]+", re.IGNORECASE)
 
 
 def _is_valid_validation(status_code: int, is_soft_404: bool, is_sso_redirect: bool) -> bool:
@@ -25,6 +31,33 @@ def _is_valid_validation(status_code: int, is_soft_404: bool, is_sso_redirect: b
     if is_soft_404 or is_sso_redirect:
         return False
     return True
+
+
+def _extract_ats_candidates(html: str, base_url: str) -> list[tuple[str, str]]:
+    if not html:
+        return []
+    candidates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def add_candidate(raw_url: str) -> None:
+        if not raw_url:
+            return
+        full = urljoin(base_url, raw_url)
+        detection = detect(full)
+        if not detection:
+            return
+        ats_name, _ = detection
+        root = normalize(full)
+        key = f"{ats_name}|{root}"
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append((ats_name, root))
+
+    for match in _URL_RE.findall(html):
+        add_candidate(match)
+
+    return candidates
 
 
 def _is_corporate_valid(status_code: int, is_sso_redirect: bool) -> bool:
@@ -70,11 +103,35 @@ class DirectResolver:
             ):
                 ats_inferred = True
             else:
-                return UnresolvedRecord(
-                    input_url=input_url,
-                    ats_name=ats_name,
-                    reason=f"ATS URL invalid: {ats_validation.status_code}",
-                )
+                fingerprints = detect_fingerprints(ats_html)
+                candidates = _extract_ats_candidates(ats_html, ats_validation.final_url)
+                if fingerprints:
+                    candidates = [item for item in candidates if item[0] in fingerprints]
+                recovered = False
+                for candidate_ats_name, candidate_root in candidates:
+                    candidate_validation, candidate_html = await self.client.fetch_and_validate(
+                        candidate_root
+                    )
+                    if _is_valid_validation(
+                        candidate_validation.status_code,
+                        candidate_validation.is_soft_404,
+                        candidate_validation.is_sso_redirect,
+                    ):
+                        detection = detect(candidate_root)
+                        ats_name = candidate_ats_name
+                        if detection:
+                            _, slug = detection
+                        root_url = candidate_root
+                        ats_validation = candidate_validation
+                        ats_html = candidate_html
+                        recovered = True
+                        break
+                if not recovered:
+                    return UnresolvedRecord(
+                        input_url=input_url,
+                        ats_name=ats_name,
+                        reason=f"ATS URL invalid: {ats_validation.status_code}",
+                    )
 
         ats_final_url = ats_validation.final_url
 
