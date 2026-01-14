@@ -229,4 +229,139 @@ REGISTRY_PATTERNS = {
     "ZOHO_RECRUIT": [
         r"zohorecruit\.com|zoho\.com/recruit",
     ],
+    "WELLFOUND": [
+        r"wellfound\.com",
+    ],
+    "HIRE_ON_THE_GO": [
+        r"hireonthego\.com",
+    ],
+    "CAREERS_BEACON": [
+        r"careersbeacon\.com",
+    ],
+    "CHECKSTER": [
+        r"checkster\.com",
+    ],
+    "CLIKTALENT": [
+        r"cliktalent\.com",
+    ],
+    "EBREEZY": [
+        r"ebreezy\.com",
+    ],
+    "ELECTREEF": [
+        r"electreef\.com",
+    ],
+    "FLATBERRY": [
+        r"flatberry\.com",
+    ],
+    "FOCUS_HR": [
+        r"focus\.hr",
+    ],
+    "FOUNTAINE": [
+        r"fountaine\.com",
+    ],
+    "HRPA": [
+        r"hrpa\.cloud",
+    ],
+    "HROOM": [
+        r"hroom\.com",
+    ],
+    "IMHIRE": [
+        r"imhire\.io",
+    ],
+    "JOIN_ITALY": [
+        r"join\.it",
+    ],
+    "KINGDOM": [
+        r"kingdom\.com",
+    ],
+    "KULA": [
+        r"kula\.ha",
+    ],
+    "MANATAL_CANADA": [
+        r"manatal\.ca",
+    ],
+    "NEXLE": [
+        r"nexle\.co",
+    ],
+    "NEXTSOURCE": [
+        r"nextsource\.com",
+    ],
+    "NEXTOUR": [
+        r"nextour\.it",
+    ],
+    "NEXUS": [
+        r"nexus\.it",
+    ],
+    "OLIST": [
+        r"olist\.com",
+    ],
+    "PALMA": [
+        r"palma\.co",
+    ],
+    "PENSO": [
+        r"penso\.co",
+    ],
+    "PIONEER": [
+        r"pioneer\.co",
+    ],
+    "POOLS": [
+        r"pools\.it",
+    ],
+    "PROCO": [
+        r"proco\.it",
+    ],
+    "PULPO": [
+        r"pulpo\.hr",
+    ],
+    "QWARE": [
+        r"qware\.it",
+    ],
+    "RELATE": [
+        r"relate\.co",
+    ],
+    "SAGE_HR": [
+        r"sage\.hr",
+    ],
+    "SMART_DREAM": [
+        r"smartdream\.it",
+    ],
+    "SOLID_JOBS": [
+        r"solidjobs\.it",
+    ],
+    "SPOTTER": [
+        r"spotter\.it",
+    ],
+    "TANDEM": [
+        r"tandem\.co",
+    ],
+    "TAWK": [
+        r"tawk\.co",
+    ],
+    "TEAMWARE": [
+        r"teamware\.co",
+    ],
+    "TIVENTY": [
+        r"tivery\.co",
+    ],
+    "ULTRATEL": [
+        r"ultratel\.co",
+    ],
+    "VULCAN": [
+        r"vulcan\.co",
+    ],
+    "WORKABLE_ITALY": [
+        r"workable\.it",
+    ],
+    "WORKBOOK": [
+        r"workbook\.it",
+    ],
+    "YAKO": [
+        r"yako\.co",
+    ],
+    "ZETA": [
+        r"zeta\.co",
+    ],
+    "ZIGGMA": [
+        r"zigmma\.co",
+    ],
 }

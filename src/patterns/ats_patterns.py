@@ -139,6 +139,84 @@ PATTERNS = [
         job_regex=re.compile(r"https?://(?P<slug>[^./]+)\.applytojob\.com/apply/[^?#]+", re.IGNORECASE),
         root_template="https://{slug}.applytojob.com",
     ),
+    ATSPattern(
+        name="TEAMTAILOR",
+        root_regex=re.compile(r"https?://(?P<slug>[^./]+)\.career\.teamtailor\.com/?", re.IGNORECASE),
+        job_regex=re.compile(r"https?://(?P<slug>[^./]+)\.career\.teamtailor\.com/[^/?#]+", re.IGNORECASE),
+        root_template="https://{slug}.career.teamtailor.com",
+    ),
+    ATSPattern(
+        name="TEAMTAILOR",
+        root_regex=re.compile(r"https?://(?P<slug>[^./]+)\.teamtailor-app\.com/?", re.IGNORECASE),
+        job_regex=re.compile(r"https?://(?P<slug>[^./]+)\.teamtailor-app\.com/[^/?#]+", re.IGNORECASE),
+        root_template="https://{slug}.teamtailor-app.com",
+    ),
+    ATSPattern(
+        name="PINPOINT",
+        root_regex=re.compile(r"https?://(?P<slug>[^./]+)\.pinpointhq\.com/?", re.IGNORECASE),
+        job_regex=re.compile(r"https?://(?P<slug>[^./]+)\.pinpointhq\.com/[^/?#]+", re.IGNORECASE),
+        root_template="https://{slug}.pinpointhq.com",
+    ),
+    ATSPattern(
+        name="RECROOTEE",
+        root_regex=re.compile(r"https?://(?P<slug>[^./]+)\.recruitee\.com/?", re.IGNORECASE),
+        job_regex=re.compile(r"https?://(?P<slug>[^./]+)\.recruitee\.com/[^/?#]+", re.IGNORECASE),
+        root_template="https://{slug}.recruitee.com",
+    ),
+    ATSPattern(
+        name="BREEZY_HR",
+        root_regex=re.compile(r"https?://(?P<slug>[^./]+)\.breezy\.hr/?", re.IGNORECASE),
+        job_regex=re.compile(r"https?://(?P<slug>[^./]+)\.breezy\.hr/[^/?#]+", re.IGNORECASE),
+        root_template="https://{slug}.breezy.hr",
+    ),
+    ATSPattern(
+        name="WELLFOUND",
+        root_regex=re.compile(r"https?://wellfound\.com/company/(?P<slug>[^/?#]+)/jobs", re.IGNORECASE),
+        job_regex=re.compile(r"https?://wellfound\.com/company/(?P<slug>[^/?#]+)/jobs/[^/?#]+", re.IGNORECASE),
+        root_template="https://wellfound.com/company/{slug}/jobs",
+    ),
+    ATSPattern(
+        name="WELLFOUND",
+        root_regex=re.compile(r"https?://angel\.co/company/(?P<slug>[^/?#]+)/jobs", re.IGNORECASE),
+        job_regex=re.compile(r"https?://angel\.co/company/(?P<slug>[^/?#]+)/jobs/[^/?#]+", re.IGNORECASE),
+        root_template="https://angel.co/company/{slug}/jobs",
+    ),
+    ATSPattern(
+        name="FRESHTEAM",
+        root_regex=re.compile(r"https?://(?P<slug>[^./]+)\.freshteam\.com/jobs", re.IGNORECASE),
+        job_regex=re.compile(r"https?://(?P<slug>[^./]+)\.freshteam\.com/jobs/[^/?#]+", re.IGNORECASE),
+        root_template="https://{slug}.freshteam.com/jobs",
+    ),
+    ATSPattern(
+        name="PERSONIO",
+        root_regex=re.compile(r"https?://(?P<slug>[^./]+)\.jobs\.personio\.com/?", re.IGNORECASE),
+        job_regex=re.compile(r"https?://(?P<slug>[^./]+)\.jobs\.personio\.com/[^/?#]+", re.IGNORECASE),
+        root_template="https://{slug}.jobs.personio.com",
+    ),
+    ATSPattern(
+        name="BULLHORN",
+        root_regex=re.compile(r"https?://careers-(?P<slug>[^./]+)\.bullhornstaffing\.com/?", re.IGNORECASE),
+        job_regex=re.compile(r"https?://careers-(?P<slug>[^./]+)\.bullhornstaffing\.com/[^/?#]+", re.IGNORECASE),
+        root_template="https://careers-{slug}.bullhornstaffing.com",
+    ),
+    ATSPattern(
+        name="MANATAL",
+        root_regex=re.compile(r"https?://apply\.manatal\.com/(?P<slug>[^/?#]+)/?", re.IGNORECASE),
+        job_regex=re.compile(r"https?://apply\.manatal\.com/(?P<slug>[^/?#]+)/[^/?#]+", re.IGNORECASE),
+        root_template="https://apply.manatal.com/{slug}",
+    ),
+    ATSPattern(
+        name="GEM",
+        root_regex=re.compile(r"https?://jobs\.gem\.com/(?P<slug>[^/?#]+)/?", re.IGNORECASE),
+        job_regex=re.compile(r"https?://jobs\.gem\.com/(?P<slug>[^/?#]+)/[^/?#]+", re.IGNORECASE),
+        root_template="https://jobs.gem.com/{slug}",
+    ),
+    ATSPattern(
+        name="COMEET",
+        root_regex=re.compile(r"https?://(?P<slug>[^./]+)\.comeet\.co/jobs?", re.IGNORECASE),
+        job_regex=re.compile(r"https?://(?P<slug>[^./]+)\.comeet\.co/jobs/[^/?#]+", re.IGNORECASE),
+        root_template="https://{slug}.comeet.co/jobs",
+    ),
 ]
 
 
@@ -146,6 +224,7 @@ USER_ATS_NAMES = {
     "LEVER",
     "GREENHOUSE",
     "RECRUITEE",
+    "RECROOTEE",
     "SMARTRECRUITERS",
     "ASHBY",
     "AVATURE",
@@ -208,6 +287,7 @@ USER_ATS_NAMES = {
     "TEAMTAILOR",
     "TRAKSTAR",
     "UKG",
+    "WELLFOUND",
     "ZAPPYHIRE",
     "ZOHO_RECRUIT",
 }

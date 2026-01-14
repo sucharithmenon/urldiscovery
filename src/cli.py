@@ -26,6 +26,7 @@ from .extractors.domain import extract_domain
 from .resolvers.direct_resolver import DirectResolver
 from .resolvers.breadcrumb_resolver import BreadcrumbResolver
 from .resolvers.reverse_resolver import ReverseResolver
+from .utils.logging import setup_debug_logging
 
 app = typer.Typer(add_completion=False)
 
@@ -334,10 +335,15 @@ async def _process_urls(
     total = len(url_list)
     if progress:
         print(f"Starting {total} URLs -> {output_path}, {unresolved_path}")
+    logger = setup_debug_logging(verbose=verbose) if verbose else None
+    
     client = HTTPClient()
     direct = DirectResolver(client=client, mode=mode)
-    breadcrumb = BreadcrumbResolver(client=client, mode=mode)
+    breadcrumb = BreadcrumbResolver(client=client, mode=mode) 
     reverse = ReverseResolver(client=client, mode=mode)
+    
+    # Set logger if verbose mode - pass logger to resolve calls
+    pass
 
     semaphore = asyncio.Semaphore(concurrency)
 

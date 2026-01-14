@@ -10,13 +10,21 @@ from ..validators.http_validator import HTTPClient
 from .direct_resolver import DirectResolver
 
 
-@dataclass
 class BreadcrumbResolver:
     client: HTTPClient
     mode: str = "strict"
-    seen_roots: set[str] = field(default_factory=set)
+    logger = None  # Optional logger for debugging
+    seen_roots: set[str] = None
+
+    def __init__(self, client: HTTPClient, mode: str = "strict", logger=None) -> None:
+        self.client = client
+        self.mode = mode
+        self.logger = logger
+        self.seen_roots = set()
 
     async def resolve(self, input_url: str) -> CompanyRecord | UnresolvedRecord:
+        if logger:
+            self.logger = logger
         detection = detect(input_url)
         if not detection:
             return UnresolvedRecord(

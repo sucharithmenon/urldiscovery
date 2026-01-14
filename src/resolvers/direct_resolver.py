@@ -78,27 +78,22 @@ class DirectResolver:
     mode: str = "strict"
     logger = None  # Optional logger for debugging
 
-    async def resolve(self, input_url: str, logger=None) -> CompanyRecord | UnresolvedRecord:
-        if logger:
-            self.logger = logger
-            
+    def __init__(self, client: HTTPClient, mode: str = "strict", logger=None) -> None:
+        self.client = client
+        self.mode = mode
+        self.logger = logger
+
+    async def resolve(self, input_url: str) -> CompanyRecord | UnresolvedRecord:
         detection = detect(input_url)
-        if self.logger:
-            self.logger.debug(f"Processing URL: {input_url}")
-            self.logger.debug(f"ATS detection: {detection}")
-            
+        
         if not detection:
-        if not detection:
-record = UnresolvedRecord(
-                        input_url=input_url,
-                        ats_name=None,
-                        reason="Not a recognized ATS URL",
-                        error_category="detection_error",
-                        validation_signals=["no_ats_pattern"],
-                    )
-        if self.logger:
-            log_validation_signals(["no_ats_pattern"], input_url, self.logger)
-        return record
+            return UnresolvedRecord(
+                input_url=input_url,
+                ats_name=None,
+                reason="Not a recognized ATS URL",
+                error_category="detection_error",
+                validation_signals=["no_ats_pattern"],
+            )
 
         ats_name, slug = detection
         root_url = normalize(input_url)
@@ -178,7 +173,7 @@ record = UnresolvedRecord(
                 ats_html,
             )
             if validation_result.status == "invalid":
-                return UnresolvedRecord(
+                record = UnresolvedRecord(
                     input_url=input_url,
                     ats_name=ats_name,
                     reason="ATS root validation failed",
@@ -187,6 +182,9 @@ record = UnresolvedRecord(
                     final_url=ats_validation.final_url,
                     validation_signals=validation_result.signals,
                 )
+                if self.logger:
+                    log_validation_signals(validation_result.signals, input_url, self.logger)
+                return record
 
         corp_result = extract_corporate_url(ats_html, ats_final_url)
         corp_url = None
