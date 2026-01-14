@@ -20,6 +20,7 @@ _SUFFIXES = [
     re.compile(r"\s*[-|]\s*careers?$", re.IGNORECASE),
     re.compile(r"\s*[-|]\s*jobs?$", re.IGNORECASE),
     re.compile(r"\s*[-|]\s*hiring$", re.IGNORECASE),
+    re.compile(r"\s*[-|:]\s*(inactive\s*)?career page$", re.IGNORECASE),
     re.compile(r"\s*careers?$", re.IGNORECASE),
     re.compile(r"\s*jobs?$", re.IGNORECASE),
 ]

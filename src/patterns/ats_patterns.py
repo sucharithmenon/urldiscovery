@@ -136,7 +136,7 @@ PATTERNS = [
     ATSPattern(
         name="JAZZHR",
         root_regex=re.compile(r"https?://(?P<slug>[^./]+)\.applytojob\.com/?", re.IGNORECASE),
-        job_regex=re.compile(r"https?://(?P<slug>[^./]+)\.applytojob\.com/apply/[^/?#]+", re.IGNORECASE),
+        job_regex=re.compile(r"https?://(?P<slug>[^./]+)\.applytojob\.com/apply/[^?#]+", re.IGNORECASE),
         root_template="https://{slug}.applytojob.com",
     ),
 ]
