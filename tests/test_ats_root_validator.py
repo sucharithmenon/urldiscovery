@@ -69,3 +69,18 @@ def test_validate_hiringthing_root_valid():
         html,
     )
     assert result.status == "valid"
+
+
+def test_validate_breezy_root_valid():
+    html = """
+    <title>Careers at Finova</title>
+    <a href="/p/8720053a48a301-director-of-software-delivery-management">Job 1</a>
+    <a href="/p/95db982b6e6801-principal-engineer">Job 2</a>
+    """
+    result = validate_ats_root_content(
+        "https://finova.breezy.hr",
+        "BREEZY_HR",
+        "finova",
+        html,
+    )
+    assert result.status == "valid"

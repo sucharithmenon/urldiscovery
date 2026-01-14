@@ -37,6 +37,7 @@ ATS_HOSTS = {
     "RECRUITEE": {"careers.recruitee.com"},
     "HIRINGTHING": {"hiringthing.com"},
     "JAZZHR": {"applytojob.com"},
+    "BREEZY_HR": {"breezy.hr"},
 }
 
 JOB_LINK_PATTERNS = {
@@ -51,6 +52,7 @@ JOB_LINK_PATTERNS = {
     "RECRUITEE": re.compile(r"/o/[^\"'\\s>]+", re.IGNORECASE),
     "HIRINGTHING": re.compile(r"/jobs/[^\"'\\s>]+", re.IGNORECASE),
     "JAZZHR": re.compile(r"/apply/[^\"'\\s>]+", re.IGNORECASE),
+    "BREEZY_HR": re.compile(r"/p/[^\"'\\s>]+", re.IGNORECASE),
 }
 
 EMPTY_STATE_RE = re.compile(
@@ -97,7 +99,7 @@ def _company_slug_matches(expected_ats: str, parsed: urlparse, slug: str) -> boo
         return False
     ats = expected_ats.upper()
     host = parsed.netloc or ""
-    if ats in {"JAZZHR", "HIRINGTHING"}:
+    if ats in {"JAZZHR", "HIRINGTHING", "BREEZY_HR"}:
         return _company_slug_in_host(host, slug)
     return _company_slug_in_path(parsed.path or "", slug)
 
