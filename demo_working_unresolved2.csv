@@ -1,0 +1,5 @@
+input_url,ats_name,reason,error_category,validation_signals,http_status,final_url,attempted_at
+https://jobs.lever.co/174powerglobal,LEVER,ATS URL invalid: 404,not_found,http_404,404,https://jobs.lever.co/174powerglobal,2026-01-14T07:04:11.492247
+https://jobs.lever.co/1password,LEVER,ATS URL invalid: 404,not_found,http_404,404,https://jobs.lever.co/1password,2026-01-14T07:04:11.787703
+https://jobs.lever.co/Archive,LEVER,ATS URL invalid: 404,not_found,http_404,404,https://jobs.lever.co/Archive,2026-01-14T07:04:17.168337
+https://jobs.lever.co/Carbon6Technologies,LEVER,ATS URL invalid: 404,not_found,http_404,404,https://jobs.lever.co/Carbon6Technologies,2026-01-14T07:04:23.045612

@@ -143,7 +143,7 @@ class DirectResolver:
                         error_category = "not_found"
                     elif ats_validation.status_code >= 500:
                         error_category = "server_error"
-                    
+
                     record = UnresolvedRecord(
                         input_url=input_url,
                         ats_name=ats_name,
@@ -153,39 +153,27 @@ class DirectResolver:
                         final_url=ats_validation.final_url,
                         validation_signals=[f"http_{ats_validation.status_code}"],
                     )
+                    if self.logger:
+                        log_http_validation(
+                            input_url,
+                            ats_validation.status_code,
+                            ats_validation.final_url,
+                            ats_validation.is_soft_404,
+                            ats_validation.is_sso_redirect,
+                            self.logger,
+                        )
+                    return record
         if self.logger:
             log_http_validation(
-                input_url, 
-                ats_validation.status_code, 
+                input_url,
+                ats_validation.status_code,
                 ats_validation.final_url,
                 ats_validation.is_soft_404,
                 ats_validation.is_sso_redirect,
-                self.logger
+                self.logger,
             )
-        return record
 
         ats_final_url = ats_validation.final_url
-        if slug:
-            validation_result = validate_ats_root_content(
-                ats_final_url,
-                ats_name,
-                slug,
-                ats_html,
-            )
-            if validation_result.status == "invalid":
-                record = UnresolvedRecord(
-                    input_url=input_url,
-                    ats_name=ats_name,
-                    reason="ATS root validation failed",
-                    error_category="validation_error",
-                    http_status=ats_validation.status_code,
-                    final_url=ats_validation.final_url,
-                    validation_signals=validation_result.signals,
-                )
-                if self.logger:
-                    log_validation_signals(validation_result.signals, input_url, self.logger)
-                return record
-
         corp_result = extract_corporate_url(ats_html, ats_final_url)
         corp_url = None
         corp_inferred = False

@@ -1,0 +1,2 @@
+input_url,ats_name,reason,error_category,validation_signals,http_status,final_url,attempted_at
+<unknown>,unknown,Exception in resolve_one: local variable 'record' referenced before assignment,exception,,,,2026-01-14T18:01:12.714547

@@ -1,0 +1,5 @@
+run_id,started_at,completed_at,input_file,input_hash,validated_count,unresolved_count,status,top_reason
+20260114-065911_235249,2026-01-14T06:59:11.231791,2026-01-14T06:59:24.218654,demo_batch.csv,d8d807831304e58f367a84cde744c18cf02ea36932c725cbef6da63cf4c0a2b5,0,10,complete,Exception in resolve_one: local variable 'record' referenced before assignment
+20260114-070112_d9317f,2026-01-14T07:01:12.373423,2026-01-14T07:01:12.715923,,,0,1,complete,Exception in resolve_one: local variable 'record' referenced before assignment
+20260114-070419_36a0d8,2026-01-14T07:04:19.799676,2026-01-14T07:04:20.160688,,,1,0,complete,
+20260114-070410_6ab261,2026-01-14T07:04:10.236160,2026-01-14T07:04:23.920058,demo_batch.csv,d8d807831304e58f367a84cde744c18cf02ea36932c725cbef6da63cf4c0a2b5,6,4,complete,ATS URL invalid: 404

@@ -1,0 +1,3 @@
+input_url,ats_name,reason,error_category,validation_signals,http_status,final_url,attempted_at
+https://jobs.lever.co/174powerglobal,LEVER,ATS URL invalid: 404,not_found,http_404,404,https://jobs.lever.co/174powerglobal,2026-01-14T06:57:22.024741
+https://jobs.lever.co/1password,LEVER,ATS URL invalid: 404,not_found,http_404,404,https://jobs.lever.co/1password,2026-01-14T06:57:22.439412

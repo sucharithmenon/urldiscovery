@@ -1,0 +1,16 @@
+{
+  "completed_at": "2026-01-14T07:04:23.920058",
+  "input_file": "demo_batch.csv",
+  "input_hash": "d8d807831304e58f367a84cde744c18cf02ea36932c725cbef6da63cf4c0a2b5",
+  "run_id": "20260114-070410_6ab261",
+  "started_at": "2026-01-14T07:04:10.236160",
+  "status": "complete",
+  "top_reasons": [
+    {
+      "count": 4,
+      "reason": "ATS URL invalid: 404"
+    }
+  ],
+  "unresolved_count": 4,
+  "validated_count": 6
+}

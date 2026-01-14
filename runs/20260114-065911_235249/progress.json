@@ -1,0 +1,13 @@
+{
+  "elapsed_sec": 11.5,
+  "eta_sec": 7.67,
+  "last_reason": "ATS URL invalid: 404",
+  "last_result": "unresolved",
+  "processed": 6,
+  "rate_per_min": 31.3,
+  "run_id": "20260114-065911_235249",
+  "total": 10,
+  "unresolved": 6,
+  "updated_at": "2026-01-14T06:59:22.742880",
+  "validated": 0
+}

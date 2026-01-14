@@ -1,0 +1,16 @@
+{
+  "completed_at": "2026-01-14T07:01:12.715923",
+  "input_file": "",
+  "input_hash": "",
+  "run_id": "20260114-070112_d9317f",
+  "started_at": "2026-01-14T07:01:12.373423",
+  "status": "complete",
+  "top_reasons": [
+    {
+      "count": 1,
+      "reason": "Exception in resolve_one: local variable 'record' referenced before assignment"
+    }
+  ],
+  "unresolved_count": 1,
+  "validated_count": 0
+}
