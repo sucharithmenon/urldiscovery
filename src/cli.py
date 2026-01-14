@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -21,11 +22,58 @@ from .output.run_tracker import (
 from .output.unresolved_writer import append_unresolved_record
 from .patterns.ats_patterns import detect, is_job_url
 from .validators.http_validator import HTTPClient
+from .extractors.domain import extract_domain
 from .resolvers.direct_resolver import DirectResolver
 from .resolvers.breadcrumb_resolver import BreadcrumbResolver
 from .resolvers.reverse_resolver import ReverseResolver
 
 app = typer.Typer(add_completion=False)
+
+QA_EXPORT_FIELDS = [
+    "input_url",
+    "reason",
+    "attempted_at",
+    "company_ats_url",
+    "company_name_clean",
+    "company_domain",
+    "corporate_url",
+    "notes",
+]
+
+QA_APPLY_FIELDS = [
+    "input_url",
+    "company_ats_url",
+    "company_name_clean",
+    "company_domain",
+    "corporate_url",
+    "notes",
+]
+
+
+def _load_csv_rows(path: str) -> list[dict]:
+    csv_path = Path(path)
+    if not csv_path.exists():
+        return []
+    with csv_path.open("r", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        return list(reader)
+
+
+def _write_unresolved_rows(path: str, rows: list[dict]) -> None:
+    csv_path = Path(path)
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["input_url", "ats_name", "reason", "attempted_at"])
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "input_url": row.get("input_url", ""),
+                    "ats_name": row.get("ats_name", ""),
+                    "reason": row.get("reason", ""),
+                    "attempted_at": row.get("attempted_at", ""),
+                }
+            )
 
 
 def _load_urls(csv_path: str) -> list[str]:
@@ -50,6 +98,156 @@ def _pick_method(url: str) -> str:
     if detect(url):
         return "breadcrumb" if is_job_url(url) else "direct"
     return "reverse"
+
+
+@app.command("qa-export")
+def qa_export(
+    unresolved: str = "output/unresolved.csv",
+    output: str = "output/qa_template.csv",
+):
+    """Export unresolved rows into a QA template for manual fixes."""
+    rows = _load_csv_rows(unresolved)
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=QA_EXPORT_FIELDS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "input_url": row.get("input_url", ""),
+                    "reason": row.get("reason", ""),
+                    "attempted_at": row.get("attempted_at", ""),
+                    "company_ats_url": "",
+                    "company_name_clean": "",
+                    "company_domain": "",
+                    "corporate_url": "",
+                    "notes": "",
+                }
+            )
+    print(f"QA template written to {output_path} ({len(rows)} rows)")
+
+
+@app.command("qa-apply")
+def qa_apply(
+    qa_file: str,
+    unresolved_in: str = "output/unresolved.csv",
+    validated: str = "output/validated.csv",
+    unresolved_out: str = "output/unresolved.csv",
+    mode: str = "strict",
+    dedupe: bool = typer.Option(True, "--dedupe/--no-dedupe"),
+    track: bool = typer.Option(True, "--track/--no-track"),
+    run_root: str = "runs",
+    progress: bool = typer.Option(True, "--progress/--no-progress"),
+):
+    """Apply manual QA fixes to unresolved rows and pull them into validated."""
+    async def _run():
+        qa_rows = _load_csv_rows(qa_file)
+        if not qa_rows:
+            print("No QA rows found.")
+            return
+
+        run_context = None
+        if track:
+            run_context = create_run_context(
+                run_root,
+                validated,
+                unresolved_out,
+                input_file=qa_file,
+                snapshot_input=True,
+            )
+
+        unresolved_rows = _load_csv_rows(unresolved_in)
+        unresolved_by_input: dict[str, dict] = {}
+        unresolved_order: list[str] = []
+        for row in unresolved_rows:
+            input_url = (row.get("input_url") or "").strip()
+            if not input_url:
+                continue
+            if input_url not in unresolved_by_input:
+                unresolved_order.append(input_url)
+            unresolved_by_input[input_url] = row
+
+        resolved_inputs: set[str] = set()
+        failed_inputs: dict[str, str] = {}
+
+        client = HTTPClient()
+        direct = DirectResolver(client=client, mode=mode)
+
+        total = len(qa_rows)
+        for idx, row in enumerate(qa_rows, start=1):
+            input_url = (row.get("input_url") or "").strip()
+            ats_url = (row.get("company_ats_url") or "").strip()
+            if not ats_url:
+                if input_url:
+                    failed_inputs[input_url] = "QA missing company_ats_url"
+                continue
+
+            result = await direct.resolve(ats_url)
+            key = input_url or ats_url
+            if isinstance(result, CompanyRecord):
+                manual_name = (row.get("company_name_clean") or "").strip()
+                manual_domain = (row.get("company_domain") or "").strip()
+                manual_corp = (row.get("corporate_url") or "").strip()
+
+                updates: dict[str, str] = {}
+                if manual_name:
+                    updates["company_name_clean"] = manual_name
+                if manual_corp and not detect(manual_corp):
+                    corp_validation = await client.validate(manual_corp)
+                    if corp_validation.status_code > 0 and corp_validation.status_code < 400 and not corp_validation.is_sso_redirect:
+                        updates["corporate_url"] = corp_validation.final_url
+                        if not manual_domain:
+                            manual_domain = extract_domain(corp_validation.final_url) or ""
+                if manual_domain:
+                    updates["company_domain"] = manual_domain
+
+                if updates:
+                    result = result.model_copy(update=updates)
+
+                append_company_record(validated, result)
+                resolved_inputs.add(key)
+            else:
+                failed_inputs[key] = f"QA failed: {result.reason}"
+
+            if progress and (idx % 10 == 0 or idx == total):
+                print(f"[qa] {idx}/{total} processed, resolved={len(resolved_inputs)}, failed={len(failed_inputs)}")
+
+        await client.close()
+
+        if dedupe:
+            dedupe_company_file(validated)
+
+        updated_unresolved: list[dict] = []
+        for input_url in unresolved_order:
+            row = unresolved_by_input.get(input_url)
+            if not row:
+                continue
+            if input_url in resolved_inputs:
+                continue
+            if input_url in failed_inputs:
+                row["reason"] = failed_inputs[input_url]
+                row["attempted_at"] = datetime.utcnow().isoformat()
+            updated_unresolved.append(row)
+
+        for input_url, reason in failed_inputs.items():
+            if input_url in unresolved_by_input:
+                continue
+            updated_unresolved.append(
+                {
+                    "input_url": input_url,
+                    "ats_name": "",
+                    "reason": reason,
+                    "attempted_at": datetime.utcnow().isoformat(),
+                }
+            )
+
+        _write_unresolved_rows(unresolved_out, updated_unresolved)
+
+        if run_context:
+            finalize_run(run_context)
+
+    asyncio.run(_run())
 
 
 async def _process_urls(
