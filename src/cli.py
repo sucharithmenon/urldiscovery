@@ -62,18 +62,35 @@ def _load_csv_rows(path: str) -> list[dict]:
 def _write_unresolved_rows(path: str, rows: list[dict]) -> None:
     csv_path = Path(path)
     csv_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["input_url", "ats_name", "reason", "attempted_at"]
+    if rows and "company_ats_url" in rows[0]:
+        fieldnames = QA_EXPORT_FIELDS
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["input_url", "ats_name", "reason", "attempted_at"])
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
-            writer.writerow(
-                {
-                    "input_url": row.get("input_url", ""),
-                    "ats_name": row.get("ats_name", ""),
-                    "reason": row.get("reason", ""),
-                    "attempted_at": row.get("attempted_at", ""),
-                }
-            )
+            if fieldnames == QA_EXPORT_FIELDS:
+                writer.writerow(
+                    {
+                        "input_url": row.get("input_url", ""),
+                        "reason": row.get("reason", ""),
+                        "attempted_at": row.get("attempted_at", ""),
+                        "company_ats_url": row.get("company_ats_url", ""),
+                        "company_name_clean": row.get("company_name_clean", ""),
+                        "company_domain": row.get("company_domain", ""),
+                        "corporate_url": row.get("corporate_url", ""),
+                        "notes": row.get("notes", ""),
+                    }
+                )
+            else:
+                writer.writerow(
+                    {
+                        "input_url": row.get("input_url", ""),
+                        "ats_name": row.get("ats_name", ""),
+                        "reason": row.get("reason", ""),
+                        "attempted_at": row.get("attempted_at", ""),
+                    }
+                )
 
 
 def _load_urls(csv_path: str) -> list[str]:
@@ -170,6 +187,7 @@ def qa_apply(
 
         resolved_inputs: set[str] = set()
         failed_inputs: dict[str, str] = {}
+        dropped_inputs: dict[str, str] = {}
 
         client = HTTPClient()
         direct = DirectResolver(client=client, mode=mode)
@@ -178,6 +196,12 @@ def qa_apply(
         for idx, row in enumerate(qa_rows, start=1):
             input_url = (row.get("input_url") or "").strip()
             ats_url = (row.get("company_ats_url") or "").strip()
+            notes = (row.get("notes") or "").strip().lower()
+            if notes and any(token in notes for token in ("drop", "delete", "remove", "invalid", "nonexistent")):
+                key = input_url or ats_url
+                if key:
+                    dropped_inputs[key] = notes
+                continue
             if not ats_url:
                 if input_url:
                     failed_inputs[input_url] = "QA missing company_ats_url"
@@ -211,7 +235,10 @@ def qa_apply(
                 failed_inputs[key] = f"QA failed: {result.reason}"
 
             if progress and (idx % 10 == 0 or idx == total):
-                print(f"[qa] {idx}/{total} processed, resolved={len(resolved_inputs)}, failed={len(failed_inputs)}")
+                print(
+                    f"[qa] {idx}/{total} processed, resolved={len(resolved_inputs)}, "
+                    f"failed={len(failed_inputs)}, dropped={len(dropped_inputs)}"
+                )
 
         await client.close()
 
@@ -224,6 +251,8 @@ def qa_apply(
             if not row:
                 continue
             if input_url in resolved_inputs:
+                continue
+            if input_url in dropped_inputs:
                 continue
             if input_url in failed_inputs:
                 row["reason"] = failed_inputs[input_url]
@@ -241,6 +270,20 @@ def qa_apply(
                     "attempted_at": datetime.utcnow().isoformat(),
                 }
             )
+
+        if run_context and dropped_inputs:
+            dropped_path = run_context.run_dir / "dropped.csv"
+            with dropped_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["input_url", "notes", "dropped_at"])
+                writer.writeheader()
+                for input_url, note in dropped_inputs.items():
+                    writer.writerow(
+                        {
+                            "input_url": input_url,
+                            "notes": note,
+                            "dropped_at": datetime.utcnow().isoformat(),
+                        }
+                    )
 
         _write_unresolved_rows(unresolved_out, updated_unresolved)
 
