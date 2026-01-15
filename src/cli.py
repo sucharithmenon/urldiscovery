@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import json
 import time
+import re
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 import typer
 
@@ -23,12 +25,51 @@ from .output.unresolved_writer import append_unresolved_record
 from .patterns.ats_patterns import detect, is_job_url
 from .validators.http_validator import HTTPClient
 from .extractors.domain import extract_domain
+from .extractors.company_name import slug_to_company_name
 from .resolvers.direct_resolver import DirectResolver
 from .resolvers.breadcrumb_resolver import BreadcrumbResolver
 from .resolvers.reverse_resolver import ReverseResolver
+from .resolvers.careers_resolver import CareersResolver, load_inputs, ats_family, expected_outcome
+from .resolvers.phase1_careers_resolver import Phase1CareersResolver, Phase1HTTPClient
+from .resolvers.phase2_ats_resolver import Phase2ATSResolver, load_phase2_inputs
 from .utils.logging import setup_debug_logging
 
 app = typer.Typer(add_completion=False)
+
+
+def _print_careers_summary(results) -> None:
+    status_counts: dict[str, int] = {}
+    family_counts: dict[str, dict[str, int]] = {}
+
+    for record, info in results:
+        status_counts[info.status] = status_counts.get(info.status, 0) + 1
+        family = ats_family(record.company_ats_name)
+        family_stats = family_counts.setdefault(family, {"RESOLVED": 0, "PARTIAL": 0, "NOT_FOUND": 0, "CONFLICT": 0, "ERROR": 0})
+        family_stats[info.status] = family_stats.get(info.status, 0) + 1
+
+    total = sum(status_counts.values())
+    print("\nCareers Resolver Summary")
+    print(f"Total rows: {total}")
+    for status in ["RESOLVED", "PARTIAL", "NOT_FOUND", "CONFLICT", "ERROR"]:
+        if status in status_counts:
+            print(f"{status}: {status_counts[status]}")
+
+    print("\nBy ATS family:")
+    for family, counts in family_counts.items():
+        expected = expected_outcome(family)
+        expected_primary = expected.get("expected_primary", "")
+        expected_notes = expected.get("notes", "")
+        total_family = sum(counts.values())
+        alignment = None
+        if expected_primary:
+            alignment = (counts.get(expected_primary, 0) / total_family) if total_family else 0
+        print(f"{family}:")
+        print(f"  RESOLVED: {counts.get('RESOLVED', 0)}")
+        print(f"  PARTIAL: {counts.get('PARTIAL', 0)}")
+        print(f"  NOT_FOUND: {counts.get('NOT_FOUND', 0)}")
+        if expected_primary:
+            print(f"  Alignment: {alignment:.0%}")
+            print(f"  Expected: {expected_primary} ({expected_notes})")
 
 QA_EXPORT_FIELDS = [
     "input_url",
@@ -105,14 +146,15 @@ def _write_unresolved_rows(path: str, rows: list[dict]) -> None:
                 )
 
 
-def _load_urls(csv_path: str) -> list[str]:
+def _load_urls(csv_path: str, limit: Optional[int] = None) -> list[str]:
     path = Path(csv_path)
     if not path.exists():
         raise FileNotFoundError(csv_path)
     with path.open("r", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames and "url" in reader.fieldnames:
-            return [row.get("url", "").strip() for row in reader if row.get("url")]
+            urls = [row.get("url", "").strip() for row in reader if row.get("url")]
+            return urls[:limit] if limit else urls
         handle.seek(0)
         plain_reader = csv.reader(handle)
         urls = []
@@ -120,6 +162,8 @@ def _load_urls(csv_path: str) -> list[str]:
             if not row:
                 continue
             urls.append(row[0].strip())
+            if limit and len(urls) >= limit:
+                break
         return urls
 
 
@@ -127,6 +171,40 @@ def _pick_method(url: str) -> str:
     if detect(url):
         return "breadcrumb" if is_job_url(url) else "direct"
     return "reverse"
+
+
+def _guess_company_slug(row: dict) -> Optional[str]:
+    for key in ("final_url", "input_url"):
+        value = (row.get(key) or "").strip()
+        if not value:
+            continue
+        detection = detect(value)
+        if detection:
+            _, slug = detection
+            return slug
+    return None
+
+
+def _guess_company_urls(slug: Optional[str]) -> list[str]:
+    if not slug:
+        return []
+    cleaned = slug.strip().lower()
+    if not cleaned:
+        return []
+    if "." in cleaned and "/" not in cleaned:
+        return [f"https://{cleaned}"]
+    base = re.sub(r"[^a-z0-9-]", "", cleaned)
+    if not base:
+        return []
+    candidates = [
+        f"https://{base}.com",
+        f"https://{base}.io",
+        f"https://{base}.ai",
+        f"https://{base}.co",
+        f"https://{base}.net",
+        f"https://{base}.org",
+    ]
+    return candidates
 
 
 @app.command("qa-export")
@@ -147,7 +225,7 @@ def qa_export(
                     "input_url": row.get("input_url", ""),
                     "reason": row.get("reason", ""),
                     "attempted_at": row.get("attempted_at", ""),
-                    "qa_action": "resolve",
+                    "qa_action": "",
                     "company_ats_url": "",
                     "company_name_clean": "",
                     "company_domain": "",
@@ -155,6 +233,43 @@ def qa_export(
                     "notes": "",
                 }
             )
+
+
+@app.command("company-suggestions")
+def company_suggestions(
+    unresolved: str = "output/unresolved.csv",
+    output: str = "output/company_suggestions.csv",
+):
+    """Generate company name and URL suggestions for unresolved rows."""
+    rows = _load_csv_rows(unresolved)
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "input_url",
+        "ats_name",
+        "reason",
+        "final_url",
+        "company_name_guess",
+        "company_url_guesses",
+    ]
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            slug = _guess_company_slug(row)
+            name_guess = slug_to_company_name(slug) if slug else ""
+            url_guesses = ";".join(_guess_company_urls(slug))
+            writer.writerow(
+                {
+                    "input_url": row.get("input_url", ""),
+                    "ats_name": row.get("ats_name", ""),
+                    "reason": row.get("reason", ""),
+                    "final_url": row.get("final_url", ""),
+                    "company_name_guess": name_guess,
+                    "company_url_guesses": url_guesses,
+                }
+            )
+
     print(f"QA template written to {output_path} ({len(rows)} rows)")
 
 
@@ -529,9 +644,10 @@ def batch(
     progress_every: int = 25,
     progress_interval: float = 10.0,
     verbose: bool = typer.Option(False, "--verbose/-v"),
+    limit: Optional[int] = typer.Option(None, "--limit"),
 ):
     """Process a batch of URLs from CSV."""
-    urls = _load_urls(input_file)
+    urls = _load_urls(input_file, limit=limit)
     async def _run():
         run_context = None
         if track:
@@ -557,6 +673,281 @@ def batch(
             progress_interval=progress_interval,
             verbose=verbose,
         )
+    asyncio.run(_run())
+
+
+@app.command("careers-resolver")
+def careers_resolver(
+    input_file: str,
+    output: str = "output/careers_resolved.csv",
+    debug: str = "output/careers_debug.jsonl",
+    concurrency: int = 5,
+    max_fetches_per_row: int = typer.Option(4, "--max-fetches-per-row"),
+    allow_homepage_fallback: bool = typer.Option(False, "--allow-homepage-fallback/--no-allow-homepage-fallback"),
+    allow_master_override: bool = typer.Option(False, "--allow-master-override/--no-allow-master-override"),
+    enable_sitemap_scan: bool = typer.Option(False, "--enable-sitemap-scan/--no-enable-sitemap-scan"),
+    export_resolved: bool = typer.Option(False, "--export-resolved/--no-export-resolved"),
+    export_partial: bool = typer.Option(False, "--export-partial/--no-export-partial"),
+    export_not_found: bool = typer.Option(False, "--export-not-found/--no-export-not-found"),
+    export_all: bool = typer.Option(True, "--export-all/--no-export-all"),
+    include_confidence_tier: bool = typer.Option(False, "--include-confidence-tier/--no-include-confidence-tier"),
+    limit: Optional[int] = typer.Option(None, "--limit"),
+):
+    """Resolve corporate careers URLs from ATS URLs."""
+    inputs = load_inputs(input_file)
+    if limit:
+        inputs = inputs[:limit]
+    resolver = CareersResolver(max_fetches=max_fetches_per_row)
+
+    async def _run():
+        results = await resolver.resolve_batch(
+            inputs,
+            concurrency=concurrency,
+            fallback_homepage=allow_homepage_fallback,
+            allow_master_override=allow_master_override,
+            enable_sitemap_scan=enable_sitemap_scan,
+        )
+
+        def confidence_tier(status: str) -> str:
+            if status == "RESOLVED":
+                return "HIGH"
+            if status == "PARTIAL":
+                return "MEDIUM"
+            return "NONE"
+
+        export_set = set()
+        if export_resolved:
+            export_set.add("RESOLVED")
+        if export_partial:
+            export_set.add("PARTIAL")
+        if export_not_found:
+            export_set.add("NOT_FOUND")
+        export_all_local = export_all
+        if export_set:
+            export_all_local = False
+        if export_all_local or not export_set:
+            export_set = {"RESOLVED", "PARTIAL", "NOT_FOUND", "CONFLICT", "ERROR"}
+
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        header = [
+            "company_ats_name",
+            "company_ats_url",
+            "company_name_clean",
+            "company_domain",
+            "corporate_url",
+        ]
+        if include_confidence_tier:
+            header.append("confidence_tier")
+
+        with output_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(header)
+            for record, info in results:
+                if info.status not in export_set:
+                    continue
+                row = [
+                    record.company_ats_name,
+                    record.company_ats_url,
+                    record.company_name_clean,
+                    record.company_domain,
+                    record.corporate_url,
+                ]
+                if include_confidence_tier:
+                    row.append(confidence_tier(info.status))
+                writer.writerow(row)
+
+        debug_path = Path(debug)
+        debug_path.parent.mkdir(parents=True, exist_ok=True)
+        with debug_path.open("w", encoding="utf-8") as handle:
+            for record, info in results:
+                family = ats_family(record.company_ats_name)
+                expectation = expected_outcome(family)
+                handle.write(
+                    json.dumps(
+                        {
+                            "company_ats_name": record.company_ats_name,
+                            "company_ats_url": record.company_ats_url,
+                            "ats_family": family,
+                            "expected_primary": expectation.get("expected_primary", ""),
+                            "expected_notes": expectation.get("notes", ""),
+                            "status": info.status,
+                            "confidence": info.confidence,
+                            "confidence_tier": confidence_tier(info.status),
+                            "evidence": info.evidence,
+                            "fetches": info.fetches,
+                            "notes": info.notes,
+                        }
+                    )
+                    + "\n"
+                )
+
+        _print_careers_summary(results)
+
+    asyncio.run(_run())
+
+
+@app.command("phase1-careers")
+def phase1_careers(
+    input_file: str,
+    output_dir: str = "/data/phase1/careers_discovery",
+    jsonl_name: str = "phase1_careers_urls.jsonl",
+    csv_name: Optional[str] = "phase1_careers_urls.csv",
+    concurrency: int = 50,
+    per_domain_concurrency: int = 5,
+    timeout: float = 12.0,
+    retries: int = 1,
+    max_pages: int = 50,
+):
+    """Phase-1 careers discovery from company sites only."""
+    input_path = Path(input_file)
+    if not input_path.exists():
+        raise FileNotFoundError(input_file)
+
+    rows = []
+    with input_path.open("r", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            rows.append(row)
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    jsonl_path = output_path / jsonl_name
+    csv_path = output_path / csv_name if csv_name else None
+
+    client = Phase1HTTPClient(
+        global_limit=concurrency,
+        per_domain_limit=per_domain_concurrency,
+        timeout=timeout,
+        retries=retries,
+    )
+    resolver = Phase1CareersResolver(client=client, max_depth=2, max_pages=max_pages)
+
+    async def _run():
+        semaphore = asyncio.Semaphore(concurrency)
+        results = []
+
+        async def run_row(row: dict):
+            async with semaphore:
+                return await resolver.resolve_one(
+                    company_name=row.get("company_name", "").strip(),
+                    primary_domain=row.get("primary_domain", "").strip(),
+                    website_url=row.get("website_url", "").strip(),
+                    linkedin_url=row.get("linkedin_url", "").strip(),
+                )
+
+        tasks = [asyncio.create_task(run_row(row)) for row in rows]
+        for task in asyncio.as_completed(tasks):
+            results.append(await task)
+
+        with jsonl_path.open("w", encoding="utf-8") as handle:
+            for result in results:
+                handle.write(
+                    json.dumps(
+                        {
+                            "company_name": result.company_name,
+                            "primary_domain": result.primary_domain,
+                            "careers_url": result.careers_url,
+                            "source": result.source,
+                            "http_status": result.http_status,
+                            "confidence": result.confidence,
+                            "notes": result.notes,
+                        }
+                    )
+                    + "\n"
+                )
+
+        if csv_path:
+            with csv_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(
+                    [
+                        "company_name",
+                        "primary_domain",
+                        "careers_url",
+                        "source",
+                        "http_status",
+                        "confidence",
+                        "notes",
+                    ]
+                )
+                for result in results:
+                    writer.writerow(
+                        [
+                            result.company_name,
+                            result.primary_domain,
+                            result.careers_url or "",
+                            result.source or "",
+                            result.http_status or "",
+                            result.confidence,
+                            result.notes,
+                        ]
+                    )
+
+        await client.close()
+
+    asyncio.run(_run())
+
+
+@app.command("phase2-ats")
+def phase2_ats(
+    input_file: str,
+    output_jsonl: str = "output/phase2_ats.jsonl",
+    output_csv: Optional[str] = "output/phase2_ats.csv",
+    concurrency: int = 10,
+):
+    """Phase-2 ATS detection from Phase-1 careers URLs."""
+    inputs = load_phase2_inputs(input_file)
+    resolver = Phase2ATSResolver()
+
+    async def _run():
+        results = await resolver.resolve_batch(inputs, concurrency=concurrency)
+
+        out_path = Path(output_jsonl)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w", encoding="utf-8") as handle:
+            for result in results:
+                handle.write(
+                    json.dumps(
+                        {
+                            "company_name": result.company_name,
+                            "careers_url": result.careers_url,
+                            "ats_provider": result.ats_provider,
+                            "ats_base_url": result.ats_base_url,
+                            "confidence": result.confidence,
+                            "detection_signals": result.detection_signals,
+                        }
+                    )
+                    + "\n"
+                )
+
+        if output_csv:
+            csv_path = Path(output_csv)
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+            with csv_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(
+                    [
+                        "company_name",
+                        "careers_url",
+                        "ats_provider",
+                        "ats_base_url",
+                        "confidence",
+                        "detection_signals",
+                    ]
+                )
+                for result in results:
+                    writer.writerow(
+                        [
+                            result.company_name,
+                            result.careers_url,
+                            result.ats_provider or "",
+                            result.ats_base_url or "",
+                            result.confidence,
+                            ";".join(result.detection_signals),
+                        ]
+                    )
+
     asyncio.run(_run())
 
 

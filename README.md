@@ -46,6 +46,12 @@ Batch process a CSV (expects a column named `url` or a first-column URL list):
 python -m src.cli batch input.csv --output output/output.csv --unresolved output/unresolved.csv
 ```
 
+Careers resolver (ATS URL -> company domain + careers URL):
+
+```bash
+python -m src.cli careers-resolver input.csv --output output/careers_resolved.csv --debug output/careers_debug.jsonl
+```
+
 Console script (after install):
 
 ```bash
@@ -68,6 +74,17 @@ url-discovery resolve "https://boards.greenhouse.io/algolia"
 - `output`: Output CSV path (default: `output/output.csv`).
 - `unresolved`: Unresolved CSV path (default: `output/unresolved.csv`).
 - `concurrency`: Concurrent tasks (default: `20`).
+
+`careers-resolver`:
+- `input_file`: CSV/JSON/JSONL with `company_ats_url` (+ optional `company_ats_name`, `master_company_domain`).
+- `output`: CSV output path (default: `output/careers_resolved.csv`).
+- `debug`: JSONL debug output path (default: `output/careers_debug.jsonl`).
+- `concurrency`: Concurrent tasks (default: `5`).
+- `--max-fetches-per-row`: Fetch budget per ATS URL (default: `4`).
+- `--enable-sitemap-scan`: Enable sitemap recovery for PARTIAL rows (default: off).
+- `--allow-homepage-fallback`: Allow homepage as `corporate_url` (default: off).
+- `--export-resolved|--export-partial|--export-not-found|--export-all`: Filter CSV output.
+- `--include-confidence-tier`: Append `confidence_tier` column to CSV.
 
 ### Resolution methods
 
@@ -93,8 +110,19 @@ Resolved CSV (`output/output.csv`) fields:
 | corporate_status | HTTP status code for corporate URL |
 | verified_at | Verification timestamp |
 
-Note: CSV output now includes status and confidence metadata to help you filter
-inferred results.
+Careers Resolver CSV (`output/careers_resolved.csv`) fields:
+
+| field | description |
+| --- | --- |
+| company_ats_name | ATS platform identifier |
+| company_ats_url | Canonical ATS job board root URL |
+| company_name_clean | Human-readable company name |
+| company_domain | Root domain (eTLD+1) |
+| corporate_url | Careers/jobs URL only (blank if missing) |
+| confidence_tier | Optional: HIGH/MEDIUM/NONE |
+
+Careers Resolver debug JSONL (`output/careers_debug.jsonl`) includes status,
+confidence, evidence sources, fetch log, ATS family expectations, and notes.
 
 Unresolved CSV (`output/unresolved.csv`) fields:
 
@@ -115,6 +143,24 @@ fresh dataset.
 - `lenient`: Records may include inferred careers URLs (common paths) and company
   names; `confidence` is downgraded to `inferred` when data is not fully verified.
   Records that still miss core fields are sent to the unresolved output.
+
+## Careers Resolver governance
+
+The Careers Resolver intentionally avoids inference and uses strict, observable
+signals only. This means RESOLVED rates will differ by ATS family and are not
+a direct measure of correctness.
+
+- `RESOLVED`: Domain + real careers URL observed.
+- `PARTIAL`: Domain observed, careers URL not found (expected for enterprise ATS).
+- `NOT_FOUND`: ATS 404 or no corporate domain evidence.
+
+The resolver will **never**:
+- Guess careers paths or modify slugs.
+- Use ATS URLs as corporate URLs.
+- Accept social links as company domains.
+
+ATS families are used only for reporting and expectation alignment, not for
+resolution decisions.
 
 ## Configuration
 
