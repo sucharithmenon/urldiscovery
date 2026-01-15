@@ -28,17 +28,6 @@ _SUFFIXES = [
     re.compile(r"\s*jobs?$", re.IGNORECASE),
 ]
 
-_LEGAL_SUFFIXES = [
-    re.compile(
-        r"\s*,?\s*(incorporated|inc\.?|llc|l\.l\.c\.|ltd\.?|limited|corp\.?|corporation|co\.?|company)\.?$",
-        re.IGNORECASE,
-    ),
-    re.compile(r"\s*,?\s*(gmbh|ag|bv|ab|nv|plc|llp)\.?$", re.IGNORECASE),
-    re.compile(r"\s*,?\s*(oy|oyj)\.?$", re.IGNORECASE),
-    re.compile(r"\s*,?\s*(pte\.?\s*ltd\.?|pvt\.?\s*ltd\.?)$", re.IGNORECASE),
-    re.compile(r"\s*,?\s*(s\.?a\.?s\.?|s\.?a\.?|s\.?r\.?l\.?|srl|spa)$", re.IGNORECASE),
-]
-
 
 def _clean_name(name: str) -> str:
     if not name:
@@ -47,8 +36,6 @@ def _clean_name(name: str) -> str:
     for pattern in _PREFIXES:
         cleaned = pattern.sub("", cleaned)
     for pattern in _SUFFIXES:
-        cleaned = pattern.sub("", cleaned)
-    for pattern in _LEGAL_SUFFIXES:
         cleaned = pattern.sub("", cleaned)
     return cleaned.strip(" -|")
 
