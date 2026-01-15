@@ -7,12 +7,12 @@ import re
 from urllib.parse import urljoin
 
 from ..extractors.company_name import extract as extract_company_name
-from ..extractors.corporate_url import extract as extract_corporate_url
-from ..extractors.domain import extract_domain, extract_homepage
+from ..extractors.corporate_url import extract as extract_corporate_url, extract_homepage, is_valid_corporate_url
+from ..extractors.domain import extract_domain, extract_homepage as extract_homepage_url
 from ..models import CompanyRecord, UnresolvedRecord
 from ..patterns.ats_patterns import detect, normalize
 from ..patterns.ats_fingerprints import detect_fingerprints
-from ..validators.ats_root_validator import validate_ats_root_content
+from ..validators.ats_root_validator import validate_ats_root_content, _extract_job_links
 from ..patterns.careers_indicators import (
     COMMON_CAREERS_PATHS,
     has_careers_indicator,
@@ -23,6 +23,7 @@ from ..utils.logging import log_validation_signals, log_http_validation
 
 
 _URL_RE = re.compile(r"https?://[^\\s'\\\"<>]+", re.IGNORECASE)
+_MAX_JOB_DETAIL_APPLY_PAGES = 3
 
 
 def _is_valid_validation(status_code: int, is_soft_404: bool, is_sso_redirect: bool) -> bool:
@@ -175,7 +176,9 @@ class DirectResolver:
 
         ats_final_url = ats_validation.final_url
         corp_result = extract_corporate_url(ats_html, ats_final_url)
+        homepage_result = extract_homepage(ats_html, ats_final_url)
         corp_url = None
+        homepage_url = homepage_result.value if homepage_result else None
         corp_inferred = False
         if corp_result:
             if corp_result.confidence == "verified":
@@ -184,11 +187,10 @@ class DirectResolver:
                 corp_url = corp_result.value
                 corp_inferred = True
         if corp_url and not has_careers_indicator(corp_url):
-            if self.mode == "strict":
-                corp_url = None
-            else:
-                corp_url = None
-                corp_inferred = True
+            if not homepage_url:
+                homepage_url = extract_homepage_url(corp_url) or corp_url
+            corp_url = None
+            corp_inferred = True
 
         if not corp_url and not detect(ats_final_url):
             if has_careers_indicator(ats_final_url) or is_careers_page(ats_html):
@@ -207,19 +209,41 @@ class DirectResolver:
                 corp_validation.status_code,
                 corp_validation.is_sso_redirect,
             )
+            if corp_ok and corp_final_url and not is_valid_corporate_url(corp_final_url):
+                corp_ok = False
+                corp_final_url = None
             if not corp_ok:
                 corp_final_url = None
                 corp_url = None
                 corp_status = None
 
-        if not corp_url and self.mode != "strict":
+        homepage_status = None
+        homepage_final_url = None
+        homepage_ok = False
+        if homepage_url:
+            homepage_validation = await self.client.validate(homepage_url)
+            homepage_status = homepage_validation.status_code
+            homepage_final_url = homepage_validation.final_url
+            homepage_ok = _is_corporate_valid(
+                homepage_validation.status_code,
+                homepage_validation.is_sso_redirect,
+            )
+            if homepage_ok and homepage_final_url and not is_valid_corporate_url(homepage_final_url):
+                homepage_ok = False
+                homepage_final_url = None
+            if not homepage_ok:
+                homepage_final_url = None
+                homepage_url = None
+                homepage_status = None
+
+        if not corp_url and not homepage_url and self.mode != "strict":
             home_candidates = []
             if corp_result and corp_result.value and not detect(corp_result.value):
                 home_candidates.append(corp_result.value)
             if ats_final_url and not detect(ats_final_url):
                 home_candidates.append(ats_final_url)
             for candidate in home_candidates:
-                homepage = extract_homepage(candidate)
+                homepage = extract_homepage_url(candidate)
                 if not homepage:
                     continue
                 base = homepage.rstrip("/")
@@ -239,11 +263,56 @@ class DirectResolver:
                 if corp_url:
                     break
 
+        if not corp_url and not homepage_url:
+            job_links = _extract_job_links(ats_html, ats_final_url, ats_name)
+            for job_url in list(job_links)[:_MAX_JOB_DETAIL_APPLY_PAGES]:
+                job_validation, job_html = await self.client.fetch_and_validate(job_url)
+                if not job_html:
+                    continue
+                job_corp_result = extract_corporate_url(job_html, job_validation.final_url)
+                job_home_result = extract_homepage(job_html, job_validation.final_url)
+                if job_corp_result and job_corp_result.value and is_valid_corporate_url(job_corp_result.value):
+                    corp_url = job_corp_result.value
+                    corp_final_url = job_corp_result.value
+                    corp_status = job_validation.status_code
+                    corp_ok = True
+                    break
+                if job_home_result and job_home_result.value and is_valid_corporate_url(job_home_result.value):
+                    homepage_url = job_home_result.value
+                    homepage_final_url = job_home_result.value
+                    homepage_status = job_validation.status_code
+                    homepage_ok = True
+                    break
+
+        if corp_url and not is_valid_corporate_url(corp_url):
+            corp_url = None
+            corp_final_url = None
+            corp_status = None
+            corp_ok = False
+            corp_inferred = True
+        if homepage_url and not is_valid_corporate_url(homepage_url):
+            homepage_url = None
+            homepage_final_url = None
+            homepage_status = None
+            homepage_ok = False
+
         company_name = extract_company_name(ats_html, slug=slug, mode=self.mode)
-        domain = extract_domain(corp_final_url or corp_url) if corp_url else None
+        chosen_url = corp_final_url or corp_url or homepage_final_url or homepage_url
+        domain = extract_domain(chosen_url) if chosen_url else None
+
+        if not chosen_url or not domain:
+            return UnresolvedRecord(
+                input_url=input_url,
+                ats_name=ats_name,
+                reason="Missing corporate URL/domain",
+                error_category="validation_error",
+                http_status=ats_validation.status_code,
+                final_url=ats_validation.final_url,
+                validation_signals=["missing_corporate_url"],
+            )
 
         confidence = "verified"
-        if not company_name or not corp_url or not corp_ok or corp_inferred or ats_inferred:
+        if not company_name or (corp_url and not corp_ok) or (homepage_url and not homepage_ok) or corp_inferred or ats_inferred:
             confidence = "inferred"
 
         return CompanyRecord(
@@ -251,9 +320,9 @@ class DirectResolver:
             company_ats_url=ats_validation.final_url,
             company_name_clean=company_name or "",
             company_domain=domain,
-            corporate_url=corp_final_url or corp_url,
+            corporate_url=corp_final_url or corp_url or homepage_final_url or homepage_url,
             ats_status=ats_validation.status_code,
-            corporate_status=corp_status,
+            corporate_status=corp_status or homepage_status,
             discovery_method="direct",
             confidence=confidence,
         )

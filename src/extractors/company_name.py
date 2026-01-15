@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Iterable
+from typing import Iterable, Optional
 
 from bs4 import BeautifulSoup
 
@@ -28,6 +28,17 @@ _SUFFIXES = [
     re.compile(r"\s*jobs?$", re.IGNORECASE),
 ]
 
+_LEGAL_SUFFIXES = [
+    re.compile(
+        r"\s*,?\s*(incorporated|inc\.?|llc|l\.l\.c\.|ltd\.?|limited|corp\.?|corporation|co\.?|company)\.?$",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\s*,?\s*(gmbh|ag|bv|ab|nv|plc|llp)\.?$", re.IGNORECASE),
+    re.compile(r"\s*,?\s*(oy|oyj)\.?$", re.IGNORECASE),
+    re.compile(r"\s*,?\s*(pte\.?\s*ltd\.?|pvt\.?\s*ltd\.?)$", re.IGNORECASE),
+    re.compile(r"\s*,?\s*(s\.?a\.?s\.?|s\.?a\.?|s\.?r\.?l\.?|srl|spa)$", re.IGNORECASE),
+]
+
 
 def _clean_name(name: str) -> str:
     if not name:
@@ -37,7 +48,9 @@ def _clean_name(name: str) -> str:
         cleaned = pattern.sub("", cleaned)
     for pattern in _SUFFIXES:
         cleaned = pattern.sub("", cleaned)
-    return cleaned.strip()
+    for pattern in _LEGAL_SUFFIXES:
+        cleaned = pattern.sub("", cleaned)
+    return cleaned.strip(" -|")
 
 
 def _iter_json_ld_objects(soup: BeautifulSoup) -> Iterable[dict]:
@@ -81,7 +94,15 @@ def _slug_to_name(slug: str) -> str:
     return slug.replace("-", " ").replace("_", " ").title()
 
 
-def extract(html: str, slug: str | None = None, mode: str = "strict") -> str | None:
+def clean_company_name(name: str) -> str:
+    return _clean_name(name)
+
+
+def slug_to_company_name(slug: str) -> str:
+    return _clean_name(_slug_to_name(slug))
+
+
+def extract(html: str, slug: Optional[str] = None, mode: str = "strict") -> Optional[str]:
     if not html:
         return None
     soup = BeautifulSoup(html, "html.parser")

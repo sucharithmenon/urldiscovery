@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 
 from ..extractors.company_name import extract as extract_company_name
 from ..extractors.domain import extract_domain
+from ..extractors.corporate_url import is_valid_corporate_url
 from ..models import CompanyRecord, UnresolvedRecord
 from ..patterns.ats_patterns import detect, normalize
 from ..patterns.careers_indicators import (
@@ -442,15 +443,32 @@ class ReverseResolver:
         company_name = extract_company_name(html, slug=slug, mode=self.mode)
 
         corporate_url_out = None
+        homepage_url = None
         validation_html = careers_html or html
         if corporate_url and (
             has_careers_indicator(corporate_url) or is_careers_page(validation_html)
         ):
             corporate_url_out = corporate_url
-        domain = extract_domain(corporate_url_out) if corporate_url_out else None
+        if corporate_url_out and not is_valid_corporate_url(corporate_url_out):
+            corporate_url_out = None
+        if not corporate_url_out and corporate_url and is_valid_corporate_url(corporate_url):
+            homepage_url = corporate_url
+        chosen_url = corporate_url_out or homepage_url
+        domain = extract_domain(chosen_url) if chosen_url else None
+
+        if chosen_url is None or not domain:
+            return UnresolvedRecord(
+                input_url=corporate_url,
+                ats_name=ats_name,
+                reason="Missing corporate URL/domain",
+                error_category="validation_error",
+                http_status=ats_validation.status_code,
+                final_url=ats_validation.final_url,
+                validation_signals=["missing_corporate_url"],
+            )
 
         confidence = "verified"
-        if not company_name or corporate_url_out is None or ats_inferred:
+        if not company_name or ats_inferred:
             confidence = "inferred"
 
         return CompanyRecord(
@@ -458,7 +476,7 @@ class ReverseResolver:
             company_ats_url=ats_validation.final_url,
             company_name_clean=company_name or "",
             company_domain=domain,
-            corporate_url=corporate_url_out,
+            corporate_url=chosen_url,
             ats_status=ats_validation.status_code,
             corporate_status=200,
             discovery_method="reverse",

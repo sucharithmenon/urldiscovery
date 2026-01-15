@@ -16,10 +16,6 @@ class CompanyRecord(BaseModel):
     company_ats_url: str = Field(
         description="Canonical ATS job board root URL"
     )
-    company_url: Optional[str] = Field(
-        default=None,
-        description="Company URL that was attempted but failed (if validation failed)"
-    )
     company_name_clean: str = Field(
         description="Human-readable company name"
     )
@@ -57,7 +53,6 @@ class CompanyRecord(BaseModel):
             "company_name_clean": self.company_name_clean,
             "company_domain": self.company_domain or "",
             "corporate_url": self.corporate_url or "",
-            "company_url": self.company_url or "",  # NEW: Canonical company URL for production workflows
         }
 
 
@@ -90,10 +85,6 @@ class UnresolvedRecord(BaseModel):
         default=None,
         description="Final URL after redirects"
     )
-    company_url: Optional[str] = Field(
-        default=None,
-        description="Company URL that was attempted but failed"
-    )
     attempted_at: datetime = Field(
         default_factory=datetime.utcnow,
         description="When resolution was attempted"
@@ -109,8 +100,8 @@ class UnresolvedRecord(BaseModel):
             "validation_signals": ";".join(self.validation_signals or []) if self.validation_signals else "",
             "http_status": str(self.http_status or ""),
             "final_url": self.final_url or "",
-            "company_url": self.company_url or "",  # NEW: Company URL extracted from ATS for production workflows
             "attempted_at": self.attempted_at.isoformat(),
+
         }
 
 
@@ -154,11 +145,10 @@ class ExtractionResult(BaseModel):
 # CSV field order (for consistent output)
 CSV_FIELDS = [
     "company_ats_name",
-    "company_ats_url", 
+    "company_ats_url",
     "company_name_clean",
     "company_domain",
     "corporate_url",
-    "company_url",  # NEW: Canonical company URL for production workflows
 ]
 
 UNRESOLVED_CSV_FIELDS = [
